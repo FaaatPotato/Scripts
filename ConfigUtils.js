@@ -5,7 +5,7 @@
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
-dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [], fileList = Java.from(dir.listFiles());
+dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [];
 Core.updateURL = "https://raw.githubusercontent.com/FaaatPotato/Scripts/main/ConfigUtils.js";
 
 function isValidModule(name) {
@@ -87,7 +87,6 @@ ConfigUtils = {
         },
         toggleconfig: function(configName) {
             try {
-                var configFile = Java.from(dir.listFiles()).find(function (file) file.getName() == configName);
                 var lineList = FileUtils.readLines(new File(dir, configName));
 
                 for each (var line in lineList) {
@@ -98,7 +97,7 @@ ConfigUtils = {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules! (Non-Render)");
             } catch (e) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+configName+"§7' does not exist!");
-                fileList.forEach(function (file) print("§8§l[§c§lConfigUtils§8§l]§7 "+file.getName()))
+                Java.from(dir.listFiles()).forEach(function (file) print("§8§l[§c§lConfigUtils§8§l]§7 "+file.getName()))
                 print("")
             }
         },
