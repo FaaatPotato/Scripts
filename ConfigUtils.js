@@ -1,11 +1,12 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.45",
+    version: "2.5",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
 dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [], fileList = Java.from(dir.listFiles());
+Core.updateURL = "https://raw.githubusercontent.com/FaaatPotato/Scripts/main/ConfigUtils.js";
 
 function isValidModule(name) {
     for each (var module in moduleManager.modules) if (module.name == name) return true;
