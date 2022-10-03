@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.4",
+    version: "2.45",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -40,13 +40,12 @@ ConfigUtils = {
         save: function(moduleName) {
             try {
                 var settingsFile = new File(dir, moduleName+"SettingsCS")
-
                 if (isValidModule(moduleName)) {
                     if (!settingsFile.exists()) {
                         if (!isRenderModule(moduleName)) {
-				            for each (var line in parseLines()) {
-					            if (line.split(" ")[0] == moduleName) filteredSettings.push(line);
-				            }
+			    for each (var line in parseLines()) {
+			       if (line.split(" ")[0] == moduleName) filteredSettings.push(line);
+			    }
                             if (filteredSettings.length) {
                                 FileUtils.writeLines(new File(dir, moduleName+"SettingsCS"), filteredSettings);
                                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+moduleName+"SettingsCS§7§l!");
@@ -77,8 +76,6 @@ ConfigUtils = {
                     if (line.split(" ")[0] == moduleName) filteredSettings.push(line)
                 }
             }
-
-            clearChat()
             if (filteredSettings.length) {
                 FileUtils.writeLines(new File(dir, "ActiveModuleSettingsCS"), filteredSettings);
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModuleSettingsCS§7§l!");
@@ -88,7 +85,6 @@ ConfigUtils = {
             filteredSettings = [];
         },
         toggleconfig: function(configName) {
-            clearChat()
             try {
                 var configFile = Java.from(dir.listFiles()).find(function (file) file.getName() == configName);
                 var lineList = FileUtils.readLines(new File(dir, configName));
@@ -106,9 +102,7 @@ ConfigUtils = {
             }
         },
         del: function(fileName) {
-            clearChat()
             var fileToDelete = new File(dir, fileName);
-
             if (fileToDelete.exists()) {
                 fileToDelete.delete()
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Deleted file '§c§l"+fileName+"§7'");
@@ -118,7 +112,7 @@ ConfigUtils = {
         },
         delall: function() {
             var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("SettingsCS"))
-            clearChat()
+	    clearChat()
             if (createdFiles.length) {
                 print("")
                 for each (var file in createdFiles) {
