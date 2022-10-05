@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.5",
+    version: "2.6",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -40,7 +40,7 @@ ConfigUtils = {
     handler: {
         save: function(moduleName) {
             try {
-                var settingsFile = new File(dir, moduleName+"SettingsCS")
+                var settingsFile = new File(dir, moduleName+"CU")
                 if (isValidModule(moduleName)) {
                     if (!settingsFile.exists()) {
                         if (!isRenderModule(moduleName)) {
@@ -48,8 +48,8 @@ ConfigUtils = {
 			       if (line.split(" ")[0] == moduleName) filteredSettings.push(line);
 			    }
                             if (filteredSettings.length) {
-                                FileUtils.writeLines(new File(dir, moduleName+"SettingsCS"), filteredSettings);
-                                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+moduleName+"SettingsCS§7§l!");
+                                FileUtils.writeLines(new File(dir, moduleName+"CU"), filteredSettings);
+                                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+moduleName+"CU§7§l!");
                             } else {
                                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+moduleName+"§7' has no settings to save!");
                             }
@@ -57,7 +57,7 @@ ConfigUtils = {
                             printMessage("§8§l[§c§lConfigUtils§8§l]§7 Render-Modules can't be saved!");
                         }
                     } else {
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+moduleName+"SettingsCS§7'");
+                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+moduleName+"CU§7'");
                     }
                 } else {
                     printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+moduleName+"§7'");
@@ -78,8 +78,8 @@ ConfigUtils = {
                 }
             }
             if (filteredSettings.length) {
-                FileUtils.writeLines(new File(dir, "ActiveModuleSettingsCS"), filteredSettings);
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModuleSettingsCS§7§l!");
+                FileUtils.writeLines(new File(dir, "ActiveModulesCU"), filteredSettings);
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModulesCU§7§l!");
             } else {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found!");
             }
@@ -108,10 +108,12 @@ ConfigUtils = {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Deleted file '§c§l"+fileName+"§7'");
             } else {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 File does not exist! '§c§l"+fileName+"§7'");
+                Java.from(dir.listFiles()).forEach(function (file) print("§8§l[§c§lConfigUtils§8§l]§7 "+file.getName()))
+                print("")
             }
         },
         delall: function() {
-            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("SettingsCS"))
+            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("CU"))
 	    clearChat()
             if (createdFiles.length) {
                 print("")
