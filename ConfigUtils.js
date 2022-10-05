@@ -1,11 +1,12 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.01",
+    version: "3.02",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
-dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [];
+var dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [];
+var ChatComponentText = Java.type("net.minecraft.util.ChatComponentText"), HoverEvent = Java.type("net.minecraft.event.HoverEvent");
 Core.updateURL = "https://raw.githubusercontent.com/FaaatPotato/Scripts/main/ConfigUtils.js";
 
 function isValidModule(name) {
@@ -26,11 +27,21 @@ function parseLines() {
     return lineList;
 }
 
-function printMessage(message) {
+function printMessage(message, hoverTextArray, textColor) {
+    if (hoverTextArray === undefined) hoverText = null;
+    if (textColor === undefined) textColor = "§7§l";
     clearChat()
-    print("")
-    print(message)
-    print("")
+
+    if (hoverTextArray) {
+        var comp = new ChatComponentText(message); comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText(textColor+hoverTextArray.map(function (entry) entry).join(textColor+", "))));
+        print("")
+        mc.thePlayer.addChatMessage(comp)
+        print("")
+    } else {
+        print("")
+        print(message)
+        print("")
+    }
 }
 
 ConfigUtils = {
@@ -39,45 +50,33 @@ ConfigUtils = {
     version: script.version,
     handler: {
         save: function(moduleName) {
-            var modules = moduleName.split(",").filter(function (entry) entry != "")
-            var settingsFile = modules.length == 0 ? new File(dir, modules+"-CU") : new File(dir, "["+modules+"]-CU")
+            modules = moduleName.split(",").filter(function (entry) entry != ""), settingsFile = modules.length < 4 ? new File(dir, modules+"-CU") : new File(dir, modules.slice(0, 3)+"...-CU")
+
             if (settingsFile.exists()) {
-                if (modules.length == 0) printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+modules+"-CU§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l["+modules+"]-CU§7'");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+settingsFile.getName()+"§7'", modules, "§c§l");
                 return
             }
             for each (var module in modules) {
-                if (!isValidModule(module)) { //why cant i use modules.map(function (m) m) FUCK IS THAT UGLY
-                    if (module.length == 0) printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+modules+"§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 One more more module(s) can't be found!");
+                if (!isValidModule(module)) {
+                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+module+"§7'")
                     return
                 }   
                 if (isRenderModule(module)) {
-                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Render-Modules can't be saved!");
+                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Render-Modules can't be saved! '§c§l"+module+"§7'");
                     return
                 }
             }
             try {
-                if (modules.length == 0) {
-			        for each (var line in parseLines()) {
-			            if (line.split(" ")[0] == modules) filteredSettings.push(line);
-			        }
-                    if (filteredSettings.length) {
-                        FileUtils.writeLines(new File(dir, modules+"-CU"), filteredSettings);
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+modules+"-CU§7§l!");
-                    } else {
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+modules+"§7' has no settings to save!");
+                for each (var module in modules) {
+                    for each (var line in parseLines()) {
+                        if (line.split(" ")[0] == module) filteredSettings.push(line);
                     }
+                }
+                if (filteredSettings.length) {
+                    FileUtils.writeLines(new File(dir, settingsFile.getName()), filteredSettings);
+                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§l"+settingsFile.getName()+"§7'", modules, "§a§l");
                 } else {
-                    for each (var module in modules) {
-                        for each (var line in parseLines()) {
-                            if (line.split(" ")[0] == module) filteredSettings.push(line);
-                        }
-                    }
-                    if (filteredSettings.length) {
-                        FileUtils.writeLines(new File(dir, "["+modules+"]-CU"), filteredSettings);
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l["+modules+"]-CU§7§l!");
-                    } else {
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 None of the given modules have settings to save!");
-                    }
+                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Modules have no settings to save!", modules, "§c§l");
                 }
             } catch (e) {
                 print(e)
@@ -96,7 +95,7 @@ ConfigUtils = {
             }
             if (filteredSettings.length) {
                 FileUtils.writeLines(new File(dir, "ActiveModules-CU"), filteredSettings);
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModules-CU§7§l!");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§lActiveModules-CU§7'", activeModules, "§a§l");
             } else {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found!");
             }
@@ -111,7 +110,7 @@ ConfigUtils = {
                         if (!module.getState()) moduleManager.getModule(line.split(" ")[0]).setState(true)
                     }
                 }
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules! (Non-Render)");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'");
             } catch (e) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+configName+"§7' does not exist!");
                 Java.from(dir.listFiles()).forEach(function (file) print("§8§l[§c§lConfigUtils§8§l]§7 "+file.getName()))
