@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.6",
+    version: "2.7",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -130,6 +130,10 @@ ConfigUtils = {
             printMessage("§8§l[§c§lConfigUtils§8§l]§7 Opening folder...");
             openFolder(dir)
         }
+    },
+    onTabComplete: function(args) {
+        if (args == "save,") return Java.from(moduleManager.modules).filter(function (module) module.category.toString().toLowerCase() != "render").map(function (module) module.name);
+        if (args == "del," || args == "toggleconfig,") return Java.from(dir.listFiles()).map(function (file) file.getName());
     }
 }
 
