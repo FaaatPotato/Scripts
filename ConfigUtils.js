@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.7",
+    version: "2.8",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -132,7 +132,7 @@ ConfigUtils = {
         }
     },
     onTabComplete: function(args) {
-        if (args == "save,") return Java.from(moduleManager.modules).filter(function (module) module.category.toString().toLowerCase() != "render").map(function (module) module.name);
+        if (args == "save,") return Java.from(moduleManager.modules).filter(function (module) module.getValues().length && module.category.displayName != "Render").map(function (module) module.name);
         if (args == "del," || args == "toggleconfig,") return Java.from(dir.listFiles()).map(function (file) file.getName());
     }
 }
