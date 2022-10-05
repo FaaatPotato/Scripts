@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.0",
+    version: "3.01",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -40,14 +40,14 @@ ConfigUtils = {
     handler: {
         save: function(moduleName) {
             var modules = moduleName.split(",").filter(function (entry) entry != "")
-            var settingsFile = modules.length < 2 ? new File(dir, modules+"-CU") : new File(dir, "["+modules+"]-CU")
+            var settingsFile = modules.length == 0 ? new File(dir, modules+"-CU") : new File(dir, "["+modules+"]-CU")
             if (settingsFile.exists()) {
-                if (modules.length < 2) printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+modules+"-CU§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l["+modules+"]-CU§7'");
+                if (modules.length == 0) printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+modules+"-CU§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l["+modules+"]-CU§7'");
                 return
             }
             for each (var module in modules) {
                 if (!isValidModule(module)) { //why cant i use modules.map(function (m) m) FUCK IS THAT UGLY
-                    if (module.length < 2) printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+modules+"§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 One more more module(s) can't be found!");
+                    if (module.length == 0) printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+modules+"§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 One more more module(s) can't be found!");
                     return
                 }   
                 if (isRenderModule(module)) {
@@ -56,7 +56,7 @@ ConfigUtils = {
                 }
             }
             try {
-                if (modules.length < 2) {
+                if (modules.length == 0) {
 			        for each (var line in parseLines()) {
 			            if (line.split(" ")[0] == modules) filteredSettings.push(line);
 			        }
