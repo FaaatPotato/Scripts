@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "2.81",
+    version: "3.0",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -39,28 +39,45 @@ ConfigUtils = {
     version: script.version,
     handler: {
         save: function(moduleName) {
+            var modules = moduleName.split(",").filter(function (entry) entry != "")
+            var settingsFile = modules.length < 2 ? new File(dir, modules+"-CU") : new File(dir, "["+modules+"]-CU")
+            if (settingsFile.exists()) {
+                if (modules.length < 2) printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+modules+"-CU§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l["+modules+"]-CU§7'");
+                return
+            }
+            for each (var module in modules) {
+                if (!isValidModule(module)) { //why cant i use modules.map(function (m) m) FUCK IS THAT UGLY
+                    if (module.length < 2) printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+modules+"§7'"); else printMessage("§8§l[§c§lConfigUtils§8§l]§7 One more more module(s) can't be found!");
+                    return
+                }   
+                if (isRenderModule(module)) {
+                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Render-Modules can't be saved!");
+                    return
+                }
+            }
             try {
-                var settingsFile = new File(dir, moduleName+"CU")
-                if (isValidModule(moduleName)) {
-                    if (!settingsFile.exists()) {
-                        if (!isRenderModule(moduleName)) {
-			    for each (var line in parseLines()) {
-			       if (line.split(" ")[0] == moduleName) filteredSettings.push(line);
-			    }
-                            if (filteredSettings.length) {
-                                FileUtils.writeLines(new File(dir, moduleName+"CU"), filteredSettings);
-                                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+moduleName+"CU§7§l!");
-                            } else {
-                                printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+moduleName+"§7' has no settings to save!");
-                            }
-                        } else {
-                            printMessage("§8§l[§c§lConfigUtils§8§l]§7 Render-Modules can't be saved!");
-                        }
+                if (modules.length < 2) {
+			        for each (var line in parseLines()) {
+			            if (line.split(" ")[0] == modules) filteredSettings.push(line);
+			        }
+                    if (filteredSettings.length) {
+                        FileUtils.writeLines(new File(dir, modules+"-CU"), filteredSettings);
+                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l"+modules+"-CU§7§l!");
                     } else {
-                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+moduleName+"CU§7'");
+                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+modules+"§7' has no settings to save!");
                     }
                 } else {
-                    printMessage("§8§l[§c§lConfigUtils§8§l]§7 Couldn't find module named '§c§l"+moduleName+"§7'");
+                    for each (var module in modules) {
+                        for each (var line in parseLines()) {
+                            if (line.split(" ")[0] == module) filteredSettings.push(line);
+                        }
+                    }
+                    if (filteredSettings.length) {
+                        FileUtils.writeLines(new File(dir, "["+modules+"]-CU"), filteredSettings);
+                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§l["+modules+"]-CU§7§l!");
+                    } else {
+                        printMessage("§8§l[§c§lConfigUtils§8§l]§7 None of the given modules have settings to save!");
+                    }
                 }
             } catch (e) {
                 print(e)
@@ -78,8 +95,8 @@ ConfigUtils = {
                 }
             }
             if (filteredSettings.length) {
-                FileUtils.writeLines(new File(dir, "ActiveModulesCU"), filteredSettings);
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModulesCU§7§l!");
+                FileUtils.writeLines(new File(dir, "ActiveModules-CU"), filteredSettings);
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: §a§lActiveModules-CU§7§l!");
             } else {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found!");
             }
@@ -113,8 +130,8 @@ ConfigUtils = {
             }
         },
         delall: function() {
-            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("CU"))
-	    clearChat()
+            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("-CU"))
+	        clearChat()
             if (createdFiles.length) {
                 print("")
                 for each (var file in createdFiles) {
@@ -132,7 +149,7 @@ ConfigUtils = {
         }
     },
     onTabComplete: function(args) {
-        if (args[0] == "save") return Java.from(moduleManager.modules).filter(function (module) module.getValues().length && module.category.displayName != "Render").map(function (module) module.name);
+        if (args[0] == "save") return Java.from(moduleManager.modules).filter(function (module) module.getValues().length && module.category.displayName != "Render").map(function (module) module.name+",");
         if (args[0] == "del" || args[0] == "toggleconfig") return Java.from(dir.listFiles()).map(function (file) file.getName());
     }
 }
