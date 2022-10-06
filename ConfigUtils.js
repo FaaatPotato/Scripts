@@ -1,9 +1,11 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.02",
-    authors: ["FaaatPotato"]
+    version: "3.03",
+    authors: ["FaaatPotato", "CzechHek"]
 })).import("Core.lib");
+
+//Thanks @CzechHek for correcting my incomplete autocomplete and the "filter for duplicates"! <3
 
 var dir = LiquidBounce.fileManager.settingsDir, filteredSettings = [];
 var ChatComponentText = Java.type("net.minecraft.util.ChatComponentText"), HoverEvent = Java.type("net.minecraft.event.HoverEvent");
@@ -50,7 +52,7 @@ ConfigUtils = {
     version: script.version,
     handler: {
         save: function(moduleName) {
-            modules = moduleName.split(",").filter(function (entry) entry != ""), settingsFile = modules.length < 4 ? new File(dir, modules+"-CU") : new File(dir, modules.slice(0, 3)+"...-CU")
+            var modules = moduleName.split(",").filter(function (entry, i, ar) entry != "" && ar.indexOf(entry) == i), settingsFile = modules.length < 4 ? new File(dir, modules+"-CU") : new File(dir, modules.slice(0, 3)+"...-CU")
 
             if (settingsFile.exists()) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+settingsFile.getName()+"§7'", modules, "§c§l");
@@ -148,7 +150,13 @@ ConfigUtils = {
         }
     },
     onTabComplete: function(args) {
-        if (args[0] == "save") return Java.from(moduleManager.modules).filter(function (module) module.getValues().length && module.category.displayName != "Render").map(function (module) module.name+",");
+        if (args[0] == "save") {
+            if (args.length == 2) {
+                var modules = args[1].split(","),
+                    lastModule = modules.pop();
+                    return Java.from(moduleManager.modules).filter(function (module) module.getValues().length && module.category.displayName != "Render" && module.name.toLowerCase().startsWith(lastModule.toLowerCase())).map(function (module) (modules.length ? modules + "," : "") + module.name + ",");
+            } return
+        }
         if (args[0] == "del" || args[0] == "toggleconfig") return Java.from(dir.listFiles()).map(function (file) file.getName());
     }
 }
