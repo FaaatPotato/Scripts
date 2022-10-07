@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.03",
+    version: "3.04",
     authors: ["FaaatPotato", "CzechHek"]
 })).import("Core.lib");
 
@@ -106,11 +106,9 @@ ConfigUtils = {
         toggleconfig: function(configName) {
             try {
                 var lineList = FileUtils.readLines(new File(dir, configName));
-
                 for each (var line in lineList) {
-                    for each (var module in moduleManager.modules) {
-                        if (!module.getState()) moduleManager.getModule(line.split(" ")[0]).setState(true)
-                    }
+                    var target = moduleManager.getModule(line.split(" ")[0])
+                    if (!target.getState()) target.setState(true);
                 }
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'");
             } catch (e) {
