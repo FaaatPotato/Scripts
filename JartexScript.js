@@ -11,7 +11,11 @@ var script = registerScript({
 //Credits: @liulihaocai made the AutoL I use it bc im laizy ok
 //Also thanks to @CzechHek for helping me with problems i had in the past <3
 
-//Absolute garbage code.
+/*---------------------*/
+/* CAREFUL! SHIT CODE! */
+/*---------------------*/
+
+//No formatting. Unused imports? Unused functions. I am scared of the following lines....
 
 var C0C = Java.type("net.minecraft.network.play.client.C0CPacketInput");
 var C00 = Java.type("net.minecraft.network.play.client.C00PacketKeepAlive");
