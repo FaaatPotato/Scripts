@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.04",
+    version: "3.05",
     authors: ["FaaatPotato", "CzechHek"]
 })).import("Core.lib");
 
@@ -29,13 +29,13 @@ function parseLines() {
     return lineList;
 }
 
-function printMessage(message, hoverTextArray, textColor) {
-    if (hoverTextArray === undefined) hoverText = null;
+function printMessage(message, array, textColor) {
+    if (array === undefined) array = null;
     if (textColor === undefined) textColor = "§7§l";
     clearChat()
 
-    if (hoverTextArray) {
-        var comp = new ChatComponentText(message); comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText(textColor+hoverTextArray.map(function (entry) entry).join(textColor+", "))));
+    if (array) {
+        var comp = new ChatComponentText(message); comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText(textColor+array.map(function (entry) entry).join(textColor+", "))));
         print("")
         mc.thePlayer.addChatMessage(comp)
         print("")
@@ -105,12 +105,12 @@ ConfigUtils = {
         },
         toggleconfig: function(configName) {
             try {
-                var lineList = FileUtils.readLines(new File(dir, configName));
+                var lineList = FileUtils.readLines(new File(dir, configName)), toggeledModules = [];
                 for each (var line in lineList) {
                     var target = moduleManager.getModule(line.split(" ")[0])
-                    if (!target.getState()) target.setState(true);
+                    if (!target.getState()) target.setState(true), toggeledModules.push(target.getName());
                 }
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'", toggeledModules, "§a§l");
             } catch (e) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+configName+"§7' does not exist!");
                 Java.from(dir.listFiles()).forEach(function (file) print("§8§l[§c§lConfigUtils§8§l]§7 "+file.getName()))
