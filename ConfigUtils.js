@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.06",
+    version: "3.07",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -52,7 +52,7 @@ ConfigUtils = {
     version: script.version,
     handler: {
         save: function(moduleName) {
-            var modules = moduleName.split(",").filter(function (entry, i, ar) entry != "" && ar.indexOf(entry) == i), settingsFile = modules.length < 4 ? new File(dir, modules+".CU") : new File(dir, modules.slice(0, 3)+"...CU")
+            var modules = moduleName.split(",").filter(function (entry, i, ar) entry != "" && ar.indexOf(entry) == i), settingsFile = modules.length < 4 ? new File(dir, modules+".CU") : new File(dir, modules.slice(0, 3)+"...CU");
 
             if (settingsFile.exists()) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+settingsFile.getName()+"§7'", modules, "§c§l");
@@ -88,7 +88,7 @@ ConfigUtils = {
         saveactive: function() {
             var activeModules = [];
             for each (var module in moduleManager.modules) {
-                if (module.getState()) activeModules.push(module.name)
+                if (module.getState() && module.category.displayName != "Render") activeModules.push(module.name)
             }
             for each (var line in parseLines()) {
                 for each (var moduleName in activeModules) {
@@ -96,10 +96,10 @@ ConfigUtils = {
                 }
             }
             if (filteredSettings.length) {
-                FileUtils.writeLines(new File(dir, "ActiveModules-CU"), filteredSettings);
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§lActiveModules-CU§7'", activeModules, "§a§l");
+                FileUtils.writeLines(new File(dir, "ActiveModules.CU"), filteredSettings);
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§lActiveModules.CU§7'", activeModules, "§a§l");
             } else {
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found!");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found! (Non-render)", ["NONE"], "§c§l");
             }
             filteredSettings = [];
         },
