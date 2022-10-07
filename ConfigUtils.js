@@ -1,8 +1,8 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.05",
-    authors: ["FaaatPotato", "CzechHek"]
+    version: "3.06",
+    authors: ["FaaatPotato"]
 })).import("Core.lib");
 
 //Thanks @CzechHek for correcting my incomplete autocomplete and the "filter for duplicates"! <3
@@ -52,7 +52,7 @@ ConfigUtils = {
     version: script.version,
     handler: {
         save: function(moduleName) {
-            var modules = moduleName.split(",").filter(function (entry, i, ar) entry != "" && ar.indexOf(entry) == i), settingsFile = modules.length < 4 ? new File(dir, modules+"-CU") : new File(dir, modules.slice(0, 3)+"...-CU")
+            var modules = moduleName.split(",").filter(function (entry, i, ar) entry != "" && ar.indexOf(entry) == i), settingsFile = modules.length < 4 ? new File(dir, modules+".CU") : new File(dir, modules.slice(0, 3)+"...CU")
 
             if (settingsFile.exists()) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 File already exists! '§c§l"+settingsFile.getName()+"§7'", modules, "§c§l");
@@ -109,7 +109,7 @@ ConfigUtils = {
                 for each (var line in lineList) {
                     var target = moduleManager.getModule(line.split(" ")[0])
                     if (!target.getState()) target.setState(true), toggeledModules.push(target.getName());
-                }
+                } 
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'", toggeledModules, "§a§l");
             } catch (e) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+configName+"§7' does not exist!");
@@ -129,7 +129,7 @@ ConfigUtils = {
             }
         },
         delall: function() {
-            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith("-CU"))
+            var createdFiles = Java.from(dir.listFiles()).filter(function (file) file.getName().endsWith(".CU"))
 	        clearChat()
             if (createdFiles.length) {
                 print("")
