@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "ConfigUtils",
-    version: "3.07",
+    version: "3.08",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -19,18 +19,9 @@ function isRenderModule(name) {
     for each (var module in moduleManager.modules) if (module.name == name && module.category.toString().toLowerCase() == "render") return true;
 }
 
-function parseLines() {
-    commandManager.executeCommands(".localconfig save fileToFilter");
-    clearChat()
-    var fileToFilter = new File(dir, "fileToFilter");
-    var lineList = FileUtils.readLines(fileToFilter)
-    fileToFilter.delete();
-
-    return lineList;
-}
-
 function printMessage(message, array, textColor) {
     if (array === undefined) array = null;
+    if (array !== Array) array = [array]
     if (textColor === undefined) textColor = "§7§l";
     clearChat()
 
@@ -70,8 +61,8 @@ ConfigUtils = {
             }
             try {
                 for each (var module in modules) {
-                    for each (var line in parseLines()) {
-                        if (line.split(" ")[0] == module) filteredSettings.push(line);
+                    for each (var val in moduleManager.getModule(module).getValues()) {
+                        filteredSettings.push(moduleManager.getModule(module).getName()+" "+val.getName()+" "+val.get())
                     }
                 }
                 if (filteredSettings.length) {
@@ -86,20 +77,18 @@ ConfigUtils = {
             filteredSettings = [];
         },
         saveactive: function() {
-            var activeModules = [];
-            for each (var module in moduleManager.modules) {
-                if (module.getState() && module.category.displayName != "Render") activeModules.push(module.name)
-            }
-            for each (var line in parseLines()) {
-                for each (var moduleName in activeModules) {
-                    if (line.split(" ")[0] == moduleName) filteredSettings.push(line)
+            var activeModules = Java.from(moduleManager.modules).filter(function (module) module.getState() && module.category.displayName != "Render");
+
+            for each (var module in activeModules) {
+                for each (var val in module.getValues()) {
+                    filteredSettings.push(module.getName()+" "+val.getName()+" "+val.get())
                 }
             }
             if (filteredSettings.length) {
                 FileUtils.writeLines(new File(dir, "ActiveModules.CU"), filteredSettings);
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§lActiveModules.CU§7'", activeModules, "§a§l");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 Saved config as: '§a§lActiveModules.CU§7'", activeModules.map(function (module) module.name), "§a§l");
             } else {
-                printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found! (Non-render)", ["NONE"], "§c§l");
+                printMessage("§8§l[§c§lConfigUtils§8§l]§7 No active modules found! (Non-render)", "NONE", "§c§l");
             }
             filteredSettings = [];
         },
@@ -109,7 +98,7 @@ ConfigUtils = {
                 for each (var line in lineList) {
                     var target = moduleManager.getModule(line.split(" ")[0])
                     if (!target.getState()) target.setState(true), toggeledModules.push(target.getName());
-                } 
+                }
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 Toggeled modules from config! '§a§l"+configName+"§7'", toggeledModules, "§a§l");
             } catch (e) {
                 printMessage("§8§l[§c§lConfigUtils§8§l]§7 '§c§l"+configName+"§7' does not exist!");
