@@ -1,9 +1,11 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.0",
+    version: "1.0.1",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
+
+Core.updateURL = "https://raw.githubusercontent.com/FaaatPotato/Scripts/main/AutoInsultReloaded.js"
 
 ChatComponentText = Java.type("net.minecraft.util.ChatComponentText");
 ClickEvent = Java.type("net.minecraft.event.ClickEvent");
@@ -26,7 +28,7 @@ internalInsults = [
     "let me give you a little.. live lesson. Live fucks you like I did."
 ]
 var sentInsult = false, clientChat, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    formattedInsult, insult, externalFile, userContent;
+    formattedInsult, insult, externalFile, userContent, currentTarget;
 
 insultValues = [
     sectionMode = value.createBoolean("§6§lGeneralConfiguration§f", true, [
