@@ -149,7 +149,7 @@ RLInsult = {
         if (e.getTargetEntity() instanceof EntityPlayer) currentTarget = e.getTargetEntity()
     },
     onUpdate: function() {
-        if (currentTarget && detectionMode.get() == "Classic") {
+        if (currentTarget != null && detectionMode.get() == "Classic") {
             if (currentTarget.isDead || currentTarget.getHealth <= 0 && !mc.thePlayer.getHealth <= 0 && !mc.thePlayer.isDead) {
                 sendInsult(currentTarget.getName())
                 currentTarget = null
