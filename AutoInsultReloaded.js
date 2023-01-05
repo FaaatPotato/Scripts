@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.1",
+    version: "1.0.2",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
