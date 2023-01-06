@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.3",
+    version: "1.0.4",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -50,10 +50,12 @@ insultValues = [
         value.createSpacer(),
         insultMode = value.createList("InsultMode", ["Internal", "Custom"], "Internal", {
             "Custom": [
-                userFileName = new (Java.extend(ListValue)) ("File", current = Java.from(new File(LiquidBounce.fileManager.dir, "AutoInsultRL").listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), "") {
+                userFileName = new (Java.extend(ListValue)) ("File", current = Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), current[0]) {
                     onChanged: function(o, n) {
-                        var updateReflector = new Reflector(userFileName);
-                        updateReflector.values = Java.to(Java.from(new File(LiquidBounce.fileManager.dir, "AutoInsultRL").listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), "java.lang.String[]")
+                        var updateReflector = new Reflector(userFileName)
+                        var overwrite = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
+                        updateReflector.values = Java.to(overwrite, "java.lang.String[]")
+
                         if (n == "Refresh" || !n) {
                             userFileName.set(current[0])
                         } else if (n && !Java.from(insultDir.listFiles()).length) {
@@ -105,8 +107,8 @@ function addCustomChat(message, URL, hoverText) {
 }
 
 function sendInsult(targetName) {
-    userContent = Java.from(FileUtils.readLines(new File(insultDir, userFileName.get())))
-    insult = insultMode.get() == "Internal" || !userContent.length ? internalInsults.random() : userContent.random()
+    userContent = Java.from(insultDir.listFiles()).length ? Java.from(FileUtils.readLines(new File(insultDir, userFileName.get()))) : null
+    insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
 
     if (!isLink(insult)) { //&& (isLink(insult) && formatMode.get() == "NoFormatting")
         formattedInsult = insult
@@ -130,12 +132,11 @@ RLInsult = {
     name: "AutoInsultReloaded",
     category: "Fun",
     description: "Automatically insults your (dead) opponents",
-    tag: detectionMode.get(),
     values: insultValues,
 
     onPacket: function(e) {
         var packet = e.getPacket()
-        if (packet instanceof C01PacketChatMessage && mc.thePlayer && sentInsult) {
+        if (packet instanceof C01PacketChatMessage) {
             clientChat = packet.getMessage()
         }
         if (packet instanceof S02PacketChat) {
@@ -172,7 +173,7 @@ RLInsult = {
 RLCreate = {
     name: "RLCreate",
     aliases: ["rlc", "rlcreate"],
-    version: script.version,
+    version: script.scriptVersion,
 
     handler: {
         downloadinsults: function(rawlink, fileName) {
