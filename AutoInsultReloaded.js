@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.2",
+    version: "1.0.3",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -13,7 +13,8 @@ HoverEvent = Java.type("net.minecraft.event.HoverEvent");
 
 insultDir = new File(LiquidBounce.fileManager.dir, "AutoInsultRL")
 insultDir.mkdir()
-internalInsults = [
+
+var internalInsults = [
     "lmao",
     "your performance was miserable :)",
     "idk bro not your best day huh",
@@ -36,8 +37,11 @@ insultValues = [
             "PacketChat": [
                 detectionPhrase = new (Java.extend(TextValue)) ("Scan", "killed by") {
                     onChanged: function(o, n) {
-                        addCustomChat(prefix+"Remember that the module will search for '§a§l"+detectionPhrase.get()+" "+mc.thePlayer.getName()+"§7'")
+                        lookFor = !n.contains(",") ? [n] : n.split(",").unique().filter(function (entry) entry != "")
+                        detectionPhrase.set(lookFor.toString())
+                        clearChat();
                         if (n.toLowerCase() == "reset") detectionPhrase.set("killed by");
+                        addCustomChat(prefix+"Module will search for '§a§l"+lookFor.join("§7' or '§a§l")+"§7' + §a§l"+mc.thePlayer.getName());
                     }
                 },
             ]
@@ -48,9 +52,9 @@ insultValues = [
             "Custom": [
                 userFileName = new (Java.extend(ListValue)) ("File", current = Java.from(new File(LiquidBounce.fileManager.dir, "AutoInsultRL").listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), "") {
                     onChanged: function(o, n) {
-                        updateReflector = new Reflector(userFileName)
+                        var updateReflector = new Reflector(userFileName);
                         updateReflector.values = Java.to(Java.from(new File(LiquidBounce.fileManager.dir, "AutoInsultRL").listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), "java.lang.String[]")
-                        if (n == "Refresh" || n == "") {
+                        if (n == "Refresh" || !n) {
                             userFileName.set(current[0])
                         } else if (n && !Java.from(insultDir.listFiles()).length) {
                             addCustomChat(prefix+"Couln't find file to read! Create one with '§c§l.rlc§7'", null, null);
@@ -103,11 +107,11 @@ function addCustomChat(message, URL, hoverText) {
 function sendInsult(targetName) {
     userContent = Java.from(FileUtils.readLines(new File(insultDir, userFileName.get())))
     insult = insultMode.get() == "Internal" || !userContent.length ? internalInsults.random() : userContent.random()
-    sentInsult = true;
 
     if (!isLink(insult)) { //&& (isLink(insult) && formatMode.get() == "NoFormatting")
         formattedInsult = insult
     } else {
+        sentInsult = true;
         switch(formatMode.get()) {
             case "NoFormatting": formattedInsult = insult; break;
             case "SurroundDots": formattedInsult = insult.replace(/[.]/g, surroundWith.get()); break;
@@ -119,6 +123,9 @@ function sendInsult(targetName) {
     return;
 }
 
+var lookFor = !detectionPhrase.get().contains(",") ? [detectionPhrase.get()] : detectionPhrase.split(",").unique().filter(function (entry) entry != "");
+//need to define it here since it only gets defined and updated onChanged
+
 RLInsult = {
     name: "AutoInsultReloaded",
     category: "Fun",
@@ -128,17 +135,17 @@ RLInsult = {
 
     onPacket: function(e) {
         var packet = e.getPacket()
-        if (packet instanceof C01PacketChatMessage && mc.thePlayer) {
+        if (packet instanceof C01PacketChatMessage && mc.thePlayer && sentInsult) {
             clientChat = packet.getMessage()
         }
         if (packet instanceof S02PacketChat) {
             chatContent = packet.getChatComponent().getUnformattedText()
             firstElement = chatContent.split(" ")[0];
 
-            if (chatContent.contains(detectionPhrase.get()+" "+mc.thePlayer.getName()) && detectionMode.get() == "PacketChat") {
+            if (lookFor.some(function (phrase) chatContent.contains(phrase+" "+mc.thePlayer.getName())) && detectionMode.get() == "PacketChat") {
                 sendInsult(firstElement)
             }
-            if (chatContent.contains(clientChat) && clickableLink.get() && sentInsult && isLink(insult)) { //cancel clientside, resend message with events
+            if (chatContent.contains(clientChat) && clickableLink.get() && isLink(insult) && sentInsult) { //cancel clientside, resend message with events
                 e.cancelEvent()
                 addCustomChat(packet.getChatComponent().getFormattedText()+" §a§l[OPEN]", extractLink(insult), "§a§lClick me!")
                 sentInsult = false;
@@ -156,6 +163,9 @@ RLInsult = {
                 return;
             }
         }
+    },
+    onWorld: function() {
+        currentTarget = null;
     }
 }
 
