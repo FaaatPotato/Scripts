@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.4",
+    version: "1.0.5",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
 
@@ -19,17 +19,25 @@ var internalInsults = [
     "your performance was miserable :)",
     "idk bro not your best day huh",
     "I, personally, would just surrender.",
-    "normally I would say absolute exquisite beginner",
+    "I would say absolute exquisite beginner",
     "that game isn't made for you...",
-    "people like you shouldn't play this game.",
+    "people as bad as you shouldn't play this game.",
     "listen, go to bed. I already sent you to sleep.",
     "buddy, try harder next time ig.",
     "seems like you lost. Must have happened before. Maybe quit?",
-    "seen on a sexual perspective your mom is hot.",
-    "let me give you a little.. live lesson. Live fucks you like I did."
+    "let me give you a little.. live lesson. Live fucks you like I did.",
+    "you should've prayed. Not to survive me but to die against someone else.",
+    "still can't do nothing against cheats",
+    "you got absolutely beat up my g. Must be fun playing legit :)",
+    "no words for such miserable performance",
+    "you couldn't look more foolish",
+    "get clowned",
+    ":skull:",
 ]
-var sentInsult = false, clientChat, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    formattedInsult, insult, externalFile, userContent, currentTarget;
+var sentLink = false, clientChat, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
+    formattedInsult, insult, externalFile, userContent, currentTarget,
+    sendQueue = [], sentInsult = false, queueTimer = new MSTimer(), capturedContent = [],
+    insultedPlayers = [];
 
 insultValues = [
     sectionMode = value.createBoolean("§6§lGeneralConfiguration§f", true, [
@@ -37,7 +45,7 @@ insultValues = [
             "PacketChat": [
                 detectionPhrase = new (Java.extend(TextValue)) ("Scan", "killed by") {
                     onChanged: function(o, n) {
-                        lookFor = !n.contains(",") ? [n] : n.split(",").unique().filter(function (entry) entry != "")
+                        lookFor = !n.includes(",") ? [n] : n.split(",").unique().filter(function (entry) entry != "")
                         detectionPhrase.set(lookFor.toString())
                         clearChat();
                         if (n.toLowerCase() == "reset") detectionPhrase.set("killed by");
@@ -47,6 +55,21 @@ insultValues = [
             ]
         }),
         chatParameter = value.createText("Parameter", "!"),
+        value.createSpacer(),
+        customTargetPos = value.createBoolean("TargetNotFound?", false, [
+            customPos = new (Java.extend(IntegerValue)) ("PositionInChat", 1, 1, 10) {
+                onChanged: function(o, n) {
+                    if (capturedContent.length) {
+                        var updateLegnth = new Reflector(customPos)
+                        updateLegnth.maximum = capturedContent.length
+                    }
+                    if (n > capturedContent.length) {
+                        addCustomChat(prefix+"Last captured message with your seatch term doesn't contain so many elements!")
+                        customPos.set(1)
+                    }
+                }
+            }
+        ]),
         value.createSpacer(),
         insultMode = value.createList("InsultMode", ["Internal", "Custom"], "Internal", {
             "Custom": [
@@ -76,14 +99,28 @@ insultValues = [
             "SurroundDots": surroundWith = value.createList("SurroundWith", ["(.)", "{.}", "[.]", "|.|", "<.>", "*.*", "'.'", "!.!"], "(.)"),
             "ReplaceDots": replaceWith = value.createList("ReplaceWith", ["!", "+", "-", "^", "`", "'", "°", "?", "~", "#", "<", "=", ">", "$", "&", "%", "²", "³", "*", "|"], "'")
         }),
-        clickableLink = value.createBoolean("ClickableLink", true)
+        clickableLink = value.createBoolean("ClickableLink", true),
+        value.createSpacer()
+    ]),
+    sectionQueue = value.createBoolean("§6§lQueueConfiguration§f", false, [
+        useQueue = value.createBoolean("UseInsultQueue", true, [
+            queueDelay = value.createInteger("Delay(MS)", 3000, 1000, 10000),
+            noPlayers = value.createBoolean("NoPlayersAllowed", false, [
+                noPlayerRange = value.createInteger("NoPlayerRange", 20, 5, 30)
+            ])
+        ])
     ])
 ]
 
 function isLink(message) {
-    if (message.contains("http://") || message.contains("https://") || message.contains("www")) {
+    if (message.includes("http://") || message.includes("https://") || message.includes("www")) {
         return true;
     } else return false;
+}
+
+function checkSent() {
+    var extractedMessage = chatContent.slice(chatContent.indexOf(clientChat.split(" ")[0]), chatContent.length)
+    if (extractedMessage == clientChat) return true; else return false;
 }
 
 function extractLink(message) {
@@ -109,11 +146,13 @@ function addCustomChat(message, URL, hoverText) {
 function sendInsult(targetName) {
     userContent = Java.from(insultDir.listFiles()).length ? Java.from(FileUtils.readLines(new File(insultDir, userFileName.get()))) : null
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
+    queueTarget = targetName
 
+    sentInsult = true
     if (!isLink(insult)) { //&& (isLink(insult) && formatMode.get() == "NoFormatting")
         formattedInsult = insult
     } else {
-        sentInsult = true;
+        sentLink = true;
         switch(formatMode.get()) {
             case "NoFormatting": formattedInsult = insult; break;
             case "SurroundDots": formattedInsult = insult.replace(/[.]/g, surroundWith.get()); break;
@@ -125,7 +164,7 @@ function sendInsult(targetName) {
     return;
 }
 
-var lookFor = !detectionPhrase.get().contains(",") ? [detectionPhrase.get()] : detectionPhrase.split(",").unique().filter(function (entry) entry != "");
+var lookFor = !detectionPhrase.get().includes(",") ? [detectionPhrase.get()] : detectionPhrase.split(",").unique().filter(function (entry) entry != "");
 //need to define it here since it only gets defined and updated onChanged
 
 RLInsult = {
@@ -141,14 +180,22 @@ RLInsult = {
         }
         if (packet instanceof S02PacketChat) {
             chatContent = packet.getChatComponent().getUnformattedText()
-            firstElement = chatContent.split(" ")[0];
+            targetPosChat = chatContent.split(" ")[customPos.get() - 1];
+            target = targetPosChat <= chatContent.split(" ").length && customTargetPos.get() ? targetPosChat : chatContent.split(" ")[0]
 
-            if (lookFor.some(function (phrase) chatContent.contains(phrase+" "+mc.thePlayer.getName())) && detectionMode.get() == "PacketChat") {
-                sendInsult(firstElement)
-            }
-            if (chatContent.contains(clientChat) && clickableLink.get() && isLink(insult) && sentInsult) { //cancel clientside, resend message with events
-                e.cancelEvent()
-                addCustomChat(packet.getChatComponent().getFormattedText()+" §a§l[OPEN]", extractLink(insult), "§a§lClick me!")
+            if (lookFor.some(function (phrase) chatContent.includes(phrase+" "+mc.thePlayer.getName())) && detectionMode.get() == "PacketChat") {
+                sendInsult(target)
+                capturedContent = chatContent.split(" ")
+            } else if (detectionMode.get() == "PacketChat" && sentInsult) {
+                if (checkSent() && clickableLink.get() && sentLink) {
+                    e.cancelEvent()
+                    addCustomChat(packet.getChatComponent().getFormattedText()+" §a§l[OPEN]", extractLink(insult), "§a§lClick me!")
+                    sentLink = false;
+                }
+                if (!checkSent() && useQueue.get() && !insultedPlayers.includes(queueTarget)) {
+                    sendQueue.push(queueTarget)
+                    queueTimer.reset()
+                } else insultedPlayers.remove(queueTarget);
                 sentInsult = false;
             }
         }
@@ -164,9 +211,16 @@ RLInsult = {
                 return;
             }
         }
+        if (useQueue.get() && queueTimer.hasTimePassed(queueDelay.get()) && sendQueue.length) {
+            if (noPlayers.get() && getTargetsInRange(noPlayerRange.get(), EntityPlayer).length) return;
+            sendInsult(sendQueue.last())
+            insultedPlayers.push(sendQueue.last()), sendQueue.remove(sendQueue.last())
+            queueTimer.reset()
+            return;
+        }
     },
     onWorld: function() {
-        currentTarget = null;
+        currentTarget = null, sendQueue = [], insultedPlayers = [];
     }
 }
 
