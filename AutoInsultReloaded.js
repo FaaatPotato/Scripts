@@ -1,9 +1,11 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.5",
+    version: "1.0.6",
     authors: ["FaaatPotato"]
 })).import("Core.lib");
+
+//As always, thanks to the Legend: @CzechHek <3
 
 Core.updateURL = "https://raw.githubusercontent.com/FaaatPotato/Scripts/main/AutoInsultReloaded.js"
 
@@ -35,7 +37,7 @@ var internalInsults = [
     ":skull:",
 ]
 var sentLink = false, clientChat, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    formattedInsult, insult, externalFile, userContent, currentTarget,
+    formattedInsult, insult, externalFile, userContent, currentTarget = null,
     sendQueue = [], sentInsult = false, queueTimer = new MSTimer(), capturedContent = [],
     insultedPlayers = [];
 
@@ -43,41 +45,42 @@ insultValues = [
     sectionMode = value.createBoolean("§6§lGeneralConfiguration§f", true, [
         detectionMode = value.createList("DetectionMode", ["PacketChat", "Classic"], "PacketChat", {
             "PacketChat": [
+                customTargetPos = value.createBoolean("TargetNotFound?", false, [
+                    valueMessage = new (Java.extend(ListValue)) ("DetectedMessage", ["No message found!", "Change to refresh!"], "") {
+                        onChanged: function() {
+                            if (capturedContent.length) {
+                                var content = capturedContent
+                                messageReflector.values = Java.to(content, "java.lang.String[]")
+                                searchIndex.set(capturedContent.indexOf(valueMessage.get()).toString())
+                            }
+                        }
+                    },
+                    searchIndex = new (Java.extend(TextValue)) ("SelectedIndex", "0") {
+                        onChanged: function(o, n) {
+                            if (parseInt(n) < 0) searchIndex.set("0")
+                        }
+                    }
+                ]),
+                value.createSpacer(),
                 detectionPhrase = new (Java.extend(TextValue)) ("Scan", "killed by") {
                     onChanged: function(o, n) {
-                        lookFor = !n.includes(",") ? [n] : n.split(",").unique().filter(function (entry) entry != "")
+                        lookFor = n.split(",").unique().filter(Boolean)
                         detectionPhrase.set(lookFor.toString())
                         clearChat();
                         if (n.toLowerCase() == "reset") detectionPhrase.set("killed by");
                         addCustomChat(prefix+"Module will search for '§a§l"+lookFor.join("§7' or '§a§l")+"§7' + §a§l"+mc.thePlayer.getName());
                     }
-                },
+                }
             ]
         }),
         chatParameter = value.createText("Parameter", "!"),
-        value.createSpacer(),
-        customTargetPos = value.createBoolean("TargetNotFound?", false, [
-            customPos = new (Java.extend(IntegerValue)) ("PositionInChat", 1, 1, 10) {
-                onChanged: function(o, n) {
-                    if (capturedContent.length) {
-                        var updateLegnth = new Reflector(customPos)
-                        updateLegnth.maximum = capturedContent.length
-                    }
-                    if (n > capturedContent.length) {
-                        addCustomChat(prefix+"Last captured message with your seatch term doesn't contain so many elements!")
-                        customPos.set(1)
-                    }
-                }
-            }
-        ]),
         value.createSpacer(),
         insultMode = value.createList("InsultMode", ["Internal", "Custom"], "Internal", {
             "Custom": [
                 userFileName = new (Java.extend(ListValue)) ("File", current = Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]), current[0]) {
                     onChanged: function(o, n) {
-                        var updateReflector = new Reflector(userFileName)
-                        var overwrite = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
-                        updateReflector.values = Java.to(overwrite, "java.lang.String[]")
+                        var content = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
+                        fileReflector.values = Java.to(content, "java.lang.String[]")
 
                         if (n == "Refresh" || !n) {
                             userFileName.set(current[0])
@@ -111,6 +114,9 @@ insultValues = [
         ])
     ])
 ]
+
+var messageReflector = new Reflector(valueMessage), fileReflector = new Reflector(userFileName),
+    lookFor = detectionPhrase.get().split(",").unique().filter(Boolean);
 
 function isLink(message) {
     if (message.includes("http://") || message.includes("https://") || message.includes("www")) {
@@ -164,13 +170,11 @@ function sendInsult(targetName) {
     return;
 }
 
-var lookFor = !detectionPhrase.get().includes(",") ? [detectionPhrase.get()] : detectionPhrase.split(",").unique().filter(function (entry) entry != "");
-//need to define it here since it only gets defined and updated onChanged
-
 RLInsult = {
     name: "AutoInsultReloaded",
     category: "Fun",
     description: "Automatically insults your (dead) opponents",
+    tag: detectionMode.get(),
     values: insultValues,
 
     onPacket: function(e) {
@@ -180,8 +184,8 @@ RLInsult = {
         }
         if (packet instanceof S02PacketChat) {
             chatContent = packet.getChatComponent().getUnformattedText()
-            targetPosChat = chatContent.split(" ")[customPos.get() - 1];
-            target = targetPosChat <= chatContent.split(" ").length && customTargetPos.get() ? targetPosChat : chatContent.split(" ")[0]
+            contentArray = chatContent.split(" ")
+            target = customTargetPos.get() && messageReflector.values.length > 2 ? contentArray[parseInt(searchIndex.get())] : contentArray[0]
 
             if (lookFor.some(function (phrase) chatContent.includes(phrase+" "+mc.thePlayer.getName())) && detectionMode.get() == "PacketChat") {
                 sendInsult(target)
@@ -195,7 +199,7 @@ RLInsult = {
                 if (!checkSent() && useQueue.get() && !insultedPlayers.includes(queueTarget)) {
                     sendQueue.push(queueTarget)
                     queueTimer.reset()
-                } else insultedPlayers.remove(queueTarget);
+                } else timeout(100, function() insultedPlayers.remove(queueTarget)); //in case bedwars
                 sentInsult = false;
             }
         }
@@ -204,6 +208,7 @@ RLInsult = {
         if (e.getTargetEntity() instanceof EntityPlayer) currentTarget = e.getTargetEntity()
     },
     onUpdate: function() {
+        AutoInsultReloadedModule.tag = detectionMode.get()
         if (currentTarget != null && detectionMode.get() == "Classic") {
             if (currentTarget.isDead || currentTarget.getHealth <= 0 && !mc.thePlayer.getHealth <= 0 && !mc.thePlayer.isDead) {
                 sendInsult(currentTarget.getName())
