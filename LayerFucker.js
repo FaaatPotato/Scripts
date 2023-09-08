@@ -18,6 +18,8 @@ var BlockPos = Java.type("net.minecraft.util.BlockPos"), Block = Java.type("net.
     tessellator = Tessellator.getInstance(), worldRenderer = tessellator.getWorldRenderer(),
     Fonts = Java.type("net.ccbluex.liquidbounce.ui.font.Fonts");
 
+//S
+
 list = {
     range: Setting.integer({
         name: "Range",
