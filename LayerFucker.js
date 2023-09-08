@@ -5,6 +5,8 @@
     authors: ["FaaatPotato", "CzechHek"]
 }));
 
+//Test commit no. 2
+
 var BlockPos = Java.type("net.minecraft.util.BlockPos"), Block = Java.type("net.minecraft.block.Block"),
     Blocks = Java.type("net.minecraft.init.Blocks"), BlockBed = Java.type("net.minecraft.block.BlockBed"),
     Color = Java.type("java.awt.Color"), BlockDirectional = Java.type("net.minecraft.block.BlockDirectional"),
