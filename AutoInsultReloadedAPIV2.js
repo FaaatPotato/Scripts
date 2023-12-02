@@ -164,7 +164,7 @@ list = { //i really miss core tbh, this is ugly af..
             var content = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
             customMode.values = Java.to(content, "java.lang.String[]") //doesnt update in realtime, requires reflector --> make one
 
-            if (n == "Refresh" || !n) {
+            if (n.toLowerCase() == "refresh" || !n) {
                 customMode.set(current[0])
             } else if (n && !Java.from(insultDir.listFiles()).length) {
                 addMessage(prefix+"Couln't find file to read! Create one with '§c§l.rlc§7'");
