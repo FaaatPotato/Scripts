@@ -47,7 +47,7 @@ Timer = java.util.Timer;
 
 //vars
 var currentTarget = null, clientChatContent, serverChatContent, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    lastKillMessage = [], selectingPhrase = false, contentArray = [], target, cIndex, last = null,
+    lastKillMessage = [], selectingPhrase = false, contentArray = [], target, cIndex, last = null, lastX = null,
     internalInsults = [
         "lmao",
         "your performance was miserable :)",
@@ -131,6 +131,8 @@ list = { //i really miss core tbh, this is ugly af..
                     addMessage(prefix+"No message to select index from.")
                     addMessage(prefix+"Default index §7'§a§l0§7' will be used.")
                 }
+            } else if (lastKillMessage.length) {
+                addMessage(prefix+"Default index '§a§l0§7' will be used.")
             }
         }
     }),
