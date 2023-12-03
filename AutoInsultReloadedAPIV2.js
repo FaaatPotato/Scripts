@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.6",
+    version: "1.0.9",
     authors: ["FaaatPotato"]
 }));
 
@@ -47,7 +47,7 @@ Timer = java.util.Timer;
 
 //vars
 var currentTarget = null, clientChatContent, serverChatContent, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    lastKillMessage = [], selectingPhrase = false, contentArray = [], target, cIndex, last = null, lastX = null,
+    lastKillMessage = [], selectingPhrase = false, contentArray = [], target, cIndex, last = null,
     internalInsults = [
         "lmao",
         "your performance was miserable :)",
@@ -67,7 +67,7 @@ var currentTarget = null, clientChatContent, serverChatContent, prefix = "§8§l
         "you couldn't look more foolish",
         "get clowned",
         ":skull:"
-    ], sentInsult = false, queueTarget, queueTimer = new MSTimer(), sendQueue = [];
+    ], sentInsult = false, lastTarget, queueTimer = new MSTimer(), sendQueue = [];
 
 insultDir = new File(FileManager.INSTANCE.dir, "AutoInsultRL")
 insultDir.mkdir()
@@ -191,40 +191,33 @@ list = { //i really miss core tbh, this is ugly af..
         name: "§c§lSettings:§7 Hyperlink",
         default: true
     }),
+    hyperLinkValue: hyperLink = Setting.boolean({
+        name: "Hyperlink",
+        default: true,
+        isSupported: function() {
+            return header3.get()
+        }
+    }),
     linkFormatValue: linkFormat = Setting.list({
         name: "LinkFormat",
         values: ["NoFormatting", "SurroundDots", "ReplaceDots", "NoDots"],
         default: "NoFormatting",
         isSupported: function() {
-            return header3.get()
+            return header3.get() && hyperLink.get()
         }
     }),
     surroundWithValue: surroundWith = Setting.text({
         name: "SurroundWith",
         default: "(.)",
         isSupported: function() {
-            return linkFormat.get() == "SurroundDots" && header3.get()
+            return linkFormat.get() == "SurroundDots" && header3.get() && hyperLink.get()
         }
     }),
     replaceWithValue: replaceWith = Setting.text({
         name: "ReplaceWith",
         default: "'",
         isSupported: function() {
-            return linkFormat.get() == "ReplaceDots" && header3.get()
-        }
-    }),
-    spacerValue4: spacer4 = Setting.boolean({
-        name: "",
-        default: false,
-        isSupported: function() {
-            return (linkFormat.get() == "SurroundDots" || linkFormat.get() == "ReplaceDots") && header3.get()
-        }
-    }),
-    hyperLinkValue: hyperLink = Setting.boolean({
-        name: "Hyperlink",
-        default: true,
-        isSupported: function() {
-            return header3.get()
+            return linkFormat.get() == "ReplaceDots" && header3.get() && hyperLink.get()
         }
     }),
     spacerValue5: spacer5 = Setting.boolean({
@@ -288,7 +281,7 @@ function addMessage(message, URL, hoverText) {
 function sendInsult(targetName) {
     userContent = Java.from(insultDir.listFiles()).length ? Java.from(FileUtils.readLines(new File(insultDir, customMode.get()))) : null
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
-    queueTarget = targetName
+    lastTarget = targetName
 
     sentInsult = true
     if (!containsLink(insult)) { //&& (containsLink(insult) && formatMode.get() == "NoFormatting")
@@ -342,8 +335,8 @@ script.registerModule({
                         sentLink = false;
                     }
                     if (!recievedPacket && useQueue.get()) {
-                        if (!sendQueue.length || (sendQueue.length && !sendQueue.includes(queueTarget))) {
-                            sendQueue.push(queueTarget)
+                        if (!sendQueue.length || (sendQueue.length && !sendQueue.includes(lastTarget))) {
+                            sendQueue.push(lastTarget)
                             queueTimer.reset()
                         }
                     }
