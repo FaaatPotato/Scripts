@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "AutoInsultReloaded",
-    version: "1.0.9",
+    version: "1.1.1",
     authors: ["FaaatPotato"]
 }));
 
@@ -9,11 +9,6 @@
 Object.defineProperty(Array.prototype, "unique", {
     writable: true,
     value: function(overwrite) overwrite ? (this = this.filter(function (v, i, s) s.indexOf(v) === i)) : this.filter(function (v, i, s) s.indexOf(v) === i)
-});
-
-Object.defineProperty(Array.prototype, "pushArray", {
-    writable: true,
-    value: function (arr) Array.prototype.push.apply(this, arr)
 });
 
 Object.defineProperty(Array.prototype, "random", {
@@ -38,16 +33,14 @@ C01PacketChatMessage = Java.type("net.minecraft.network.play.client.C01PacketCha
 S02PacketChat = Java.type("net.minecraft.network.play.server.S02PacketChat")
 S45PacketTitle = Java.type("net.minecraft.network.play.server.S45PacketTitle")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
-URL = Java.type("java.net.URL")
 File = Java.type("java.io.File")
 FileManager = Java.type("net.ccbluex.liquidbounce.file.FileManager");
 FileUtils = org.apache.commons.io.FileUtils;
 MSTimer = Java.type("net.ccbluex.liquidbounce.utils.timer.MSTimer");
-Timer = java.util.Timer;
 
 //vars
-var currentTarget = null, clientChatContent, serverChatContent, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
-    lastKillMessage = [], selectingPhrase = false, contentArray = [], target, cIndex, last = null,
+var currentTarget = null, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
+    lastKillMessage = [], selectingPhrase = false,
     internalInsults = [
         "lmao",
         "your performance was miserable :)",
@@ -169,7 +162,7 @@ list = { //i really miss core tbh, this is ugly af..
             if (n.toLowerCase() == "refresh" || !n) {
                 customMode.set(current[0])
             } else if (n && !Java.from(insultDir.listFiles()).length) {
-                addMessage(prefix+"Couln't find file to read! Create one with '§c§l.rlc§7'");
+                addMessage(prefix+"Couln't find file to read!");
             }
         }
     }),
@@ -188,7 +181,7 @@ list = { //i really miss core tbh, this is ugly af..
         }
     }),
     headerValue3: header3 = Setting.boolean({
-        name: "§c§lSettings:§7 Hyperlink",
+        name: "§c§lSettings:§7 Format",
         default: true
     }),
     hyperLinkValue: hyperLink = Setting.boolean({
@@ -218,6 +211,38 @@ list = { //i really miss core tbh, this is ugly af..
         default: "'",
         isSupported: function() {
             return linkFormat.get() == "ReplaceDots" && header3.get() && hyperLink.get()
+        }
+    }),
+    spacerValue6: spacer6 = Setting.boolean({
+        name: "",
+        default: false,
+        isSupported: function() {
+            return header3.get() && hyperLink.get()
+        }
+    }),
+    useCustomLettersValue: useCustomLetters = Setting.boolean({
+        name: "CustomAlphabet",
+        default: false,
+        isSupported: function() {
+            return header3.get()
+        }
+    }),
+    customLettersValue: customLetters = Setting.list({
+        name: "File",
+        values: current = Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]),
+        default: current[0],
+        isSupported: function() {
+            return header3.get() && useCustomLetters.get()
+        },
+        onChanged: function(o, n) {
+            var content = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
+            customLetters.values = Java.to(content, "java.lang.String[]") //doesnt update in realtime, requires reflector --> make one
+
+            if (n.toLowerCase() == "refresh" || !n) {
+                customLetters.set(current[0])
+            } else if (n && !Java.from(insultDir.listFiles()).length) {
+                addMessage(prefix+"Couln't find file to read!");
+            }
         }
     }),
     spacerValue5: spacer5 = Setting.boolean({
@@ -295,6 +320,15 @@ function sendInsult(targetName) {
         }
         sentLink = true;
     }
+    if (useCustomLetters.get() && Java.from(insultDir.listFiles()).length) {
+        var alphabet = "abcdefghijklmnopqrstuvwxyz".split("")
+        var customAlphabet = FileUtils.readFileToString(new File(insultDir, customLetters.get())).split("")
+        var insult = formattedInsult.split("")
+        for (i = 0; i < insult.length; i++) {
+            insult[i] = customAlphabet[alphabet.indexOf(insult[i])]
+        }
+        formattedInsult = insult.toString()
+    }
     mc.thePlayer.sendChatMessage(chatParameter.get()+" "+targetName+" "+formattedInsult)
 }
 
@@ -308,7 +342,10 @@ script.registerModule({
     });
     module.on("packet", function(e) {
         var packet = e.getPacket()
+        var cIndex = null
+
         if (detectionMode.get() == "PacketChat") {
+            var clientChatContent = ""
             if (packet instanceof C01PacketChatMessage) {
                 clientChatContent = packet.getMessage()
                 if (selectingPhrase && lastKillMessage.indexOf(clientChatContent) != -1) {
@@ -320,9 +357,9 @@ script.registerModule({
                 }
             }
             if (packet instanceof S02PacketChat) {
-                serverChatContent = packet.getChatComponent().getUnformattedText()
-                contentArray = serverChatContent.split(" ")
-                target = customIndex.get() ? contentArray[cIndex] : contentArray[0]
+                var serverChatContent = packet.getChatComponent().getUnformattedText()
+                var contentArray = serverChatContent.split(" ")
+                var target = customIndex.get() ? contentArray[cIndex] : contentArray[0]
             
                 if (lookFor.some(function (phrase) serverChatContent.contains(phrase+" "+mc.thePlayer.getName()))) {
                     sendInsult(target)
@@ -357,6 +394,7 @@ script.registerModule({
             }
         }
         if (sendQueue.length) {
+            var last = null
             if (queueTimer.hasTimePassed(sendDelay.get()*1000)) {
                 last = sendQueue.pop()
                 sendInsult(last)
