@@ -37,6 +37,7 @@ File = Java.type("java.io.File")
 FileManager = Java.type("net.ccbluex.liquidbounce.file.FileManager");
 FileUtils = org.apache.commons.io.FileUtils;
 MSTimer = Java.type("net.ccbluex.liquidbounce.utils.timer.MSTimer");
+StandardCharsets = Java.type("java.nio.charset.StandardCharsets");
 
 //vars
 var currentTarget = null, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
@@ -285,8 +286,7 @@ function containsLink(message) {
 }
 
 function extractLink(message) {
-    var link = message.split(" ").filter(function (part) containsLink(part))
-    return link;
+    return message.split(" ").filter(function (part) containsLink(part))
 }
 
 function addMessage(message, URL, hoverText) {
@@ -321,13 +321,16 @@ function sendInsult(targetName) {
         sentLink = true;
     }
     if (useCustomLetters.get() && Java.from(insultDir.listFiles()).length) {
-        var alphabet = "abcdefghijklmnopqrstuvwxyz".split("")
-        var customAlphabet = FileUtils.readFileToString(new File(insultDir, customLetters.get())).split("")
-        var insult = formattedInsult.split("")
-        for (i = 0; i < insult.length; i++) {
-            insult[i] = customAlphabet[alphabet.indexOf(insult[i])]
+        var alphabet = "abcdefghijklmnopqrstuvwxyz"
+        var customAlphabet = FileUtils.readFileToString(new File(insultDir, customLetters.get()), StandardCharsets.UTF_8)
+        var replacedInsult = ""
+        for (i = 0; i < formattedInsult.length; i++) {
+            var letterIndex = alphabet.indexOf(formattedInsult[i].toLowerCase())
+            if (letterIndex != -1) {
+                replacedInsult += customAlphabet[letterIndex]
+            } else replacedInsult += formattedInsult[i];
         }
-        formattedInsult = insult.toString()
+        formattedInsult = replacedInsult
     }
     mc.thePlayer.sendChatMessage(chatParameter.get()+" "+targetName+" "+formattedInsult)
 }
@@ -338,8 +341,6 @@ script.registerModule({
     description: "Insults players in an unique way.",
     settings: list,
  }, function (module) {
-    module.on("enable", function() {
-    });
     module.on("packet", function(e) {
         var packet = e.getPacket()
         var cIndex = null
