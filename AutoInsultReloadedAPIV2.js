@@ -53,7 +53,7 @@ var currentTarget = null, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
         "listen, go to bed. I already sent you to sleep.",
         "buddy, try harder next time ig.",
         "seems like you lost. Must have happened before. Maybe quit?",
-        "let me give you a little.. live lesson. Live fucks you like I did.",
+        "let me give you a little.. life lesson. Life fucks you like I did.",
         "you should've prayed. Not to survive me but to die against someone else.",
         "still can't do nothing against cheats",
         "you got absolutely beat up my g. Must be fun playing legit :)",
@@ -65,6 +65,8 @@ var currentTarget = null, prefix = "§8§l[§c§lAutoInsultRL§8§l]§7 ",
 
 insultDir = new File(FileManager.INSTANCE.dir, "AutoInsultRL")
 insultDir.mkdir()
+customLettersFile = new File(insultDir, "customLetters.txt")
+customLettersFile.createNewFile()
 
 list = { //i really miss core tbh, this is ugly af..
     headerValue1: header1 = Setting.boolean({
@@ -122,11 +124,13 @@ list = { //i really miss core tbh, this is ugly af..
                     selectingPhrase = true
                 } else {
                     customIndex.set(false)
+                    selectingPhrase = false;
                     addMessage(prefix+"No message to select index from.")
                     addMessage(prefix+"Default index §7'§a§l0§7' will be used.")
                 }
             } else if (lastKillMessage.length) {
                 addMessage(prefix+"Default index '§a§l0§7' will be used.")
+                selectingPhrase = false
             }
         }
     }),
@@ -229,21 +233,15 @@ list = { //i really miss core tbh, this is ugly af..
         }
     }),
     customLettersValue: customLetters = Setting.list({
-        name: "File",
-        values: current = Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]),
-        default: current[0],
+        name: "SelectSet",
+        default: "",
+        values: Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).concat(["", "Refresh"]),
         isSupported: function() {
             return header3.get() && useCustomLetters.get()
         },
         onChanged: function(o, n) {
-            var content = Java.from(insultDir.listFiles()).length ? Java.from(insultDir.listFiles()).map(function (file) file.getName()).concat(["", "Refresh"]) : ["", "Refresh"]
+            var content = Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).concat(["", "Refresh"])
             customLetters.values = Java.to(content, "java.lang.String[]") //doesnt update in realtime, requires reflector --> make one
-
-            if (n.toLowerCase() == "refresh" || !n) {
-                customLetters.set(current[0])
-            } else if (n && !Java.from(insultDir.listFiles()).length) {
-                addMessage(prefix+"Couln't find file to read!");
-            }
         }
     }),
     spacerValue5: spacer5 = Setting.boolean({
@@ -304,7 +302,7 @@ function addMessage(message, URL, hoverText) {
 }
 
 function sendInsult(targetName) {
-    userContent = Java.from(insultDir.listFiles()).length ? Java.from(FileUtils.readLines(new File(insultDir, customMode.get()))) : null
+    userContent = Java.from(insultDir.listFiles()).length ? Java.from(FileUtils.readLines(new File(insultDir, customMode.get()), StandardCharsets.UTF_8)) : null
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
     lastTarget = targetName
 
@@ -320,12 +318,11 @@ function sendInsult(targetName) {
         }
         sentLink = true;
     }
-    if (useCustomLetters.get() && Java.from(insultDir.listFiles()).length) {
-        var alphabet = "abcdefghijklmnopqrstuvwxyz"
-        var customAlphabet = FileUtils.readFileToString(new File(insultDir, customLetters.get()), StandardCharsets.UTF_8)
+    if (useCustomLetters.get()) {
+        var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())]
         var replacedInsult = ""
         for (i = 0; i < formattedInsult.length; i++) {
-            var letterIndex = alphabet.indexOf(formattedInsult[i].toLowerCase())
+            var letterIndex = "abcdefghijklmnopqrstuvwxyz".indexOf(formattedInsult[i].toLowerCase())
             if (letterIndex != -1) {
                 replacedInsult += customAlphabet[letterIndex]
             } else replacedInsult += formattedInsult[i];
