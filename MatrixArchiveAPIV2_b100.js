@@ -73,6 +73,7 @@ DamageSource = Java.type("net.minecraft.util.DamageSource")
 Vec3 = Java.type("net.minecraft.util.Vec3")
 BlockSnow = Java.type("net.minecraft.block.BlockSnow")
 BlockLiquid = Java.type("net.minecraft.block.BlockLiquid")
+GuiInventory = Java.type("net.minecraft.client.gui.inventory.GuiInventory")
 
 /*------------------*/
 /*  PROPERTY FUNCS  */
@@ -494,6 +495,9 @@ script.registerModule({
             }
         }
     });
+    module.on("world", function () {
+        sendQueue = []
+    })
 });
 
 MatrixFuckerValues = {
@@ -1224,6 +1228,10 @@ MatrixTeleportHitValues = {
         name: "PacketEvent",
         default: false
     }),
+    renderTargetHUDValue: renderTargetHUD = Setting.boolean({
+        name: "TargetHUD",
+        default: true
+    }),
     renderPacketPositionsValue: renderPacketPositions = Setting.boolean({
         name: "RenderPacketPositions",
         default: true
@@ -1293,7 +1301,7 @@ function rayTrace(range) {
 
         if (tExit > 0 && tEntry <= tExit && tEntry <= range) intersected.push(entity);
     }
-    return intersected.sort(function (a, b) PlayerExtensionKt.getDistanceToEntityBox(a, mc.thePlayer) - PlayerExtensionKt.getDistanceToEntityBox(b, mc.thePlayer))[0]
+    return intersected.length ? intersected.sort(function (a, b) PlayerExtensionKt.getDistanceToEntityBox(a, mc.thePlayer) - PlayerExtensionKt.getDistanceToEntityBox(b, mc.thePlayer))[0] : null
 }
 
 //an implementation of https://de.wikipedia.org/wiki/A*-Algorithmus
@@ -1313,16 +1321,17 @@ function isPassable(blockPos) {
     var block = state.getBlock()
     if (!block.getCollisionBoundingBox(mc.theWorld, blockPos, state) || mc.theWorld.isAirBlock(blockPos) ||
         block.isLadder(mc.theWorld, blockPos, mc.thePlayer) || block.isPassable(mc.theWorld, blockPos) ||
-        block.isFlowerPot() || block == Blocks.snow_layer || block instanceof BlockLiquid) return true; else return false
+        block.isFlowerPot() || block == Blocks.snow_layer || block instanceof BlockLiquid) return true;
+    return false
 }
 
-function isReachable(blockPos) {
+function isSurrounded(blockPos) {
     var offsets = [[0, -1, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 1, 0], [0, 1, 1], [-1, 1, 0], [0, 1, -1], [0, 2, 0]]
     for (var i = 0; i < offsets.length; i++) {
         var pos = new BlockPos(blockPos.getX() + offsets[i][0], blockPos.getY() + offsets[i][1], blockPos.getZ() + offsets[i][2])
-        if (isPassable(pos)) return true
+        if (isPassable(pos)) return false
     }
-    return false;
+    return true;
 }
 
 Node = function(pos, parent, gCost, hCost, tCost) {
@@ -1408,7 +1417,7 @@ PathAlgorithm = function() {
     }
 
     this.compute = function (loops, heuristic, diagonal) {
-        if (!isPassable(this.endPos) || !isReachable(this.endPos)) return null
+        if (!isPassable(this.endPos) || isSurrounded(this.endPos) || isSurrounded(this.startPos)) return null
         while (loops-- > 0 && this.openList.length) {
             var currentNode = this.getCheapestNode()
 
@@ -1429,7 +1438,7 @@ PathAlgorithm = function() {
     }
 }
 
-var pathAlgorithm = new PathAlgorithm(), path = [], packetPositions = [], selectedTarget = false, targetPlayer, tpHitTimer = new MSTimer();
+var pathAlgorithm = new PathAlgorithm(), path = [], packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer();
 
 script.registerModule({
     name: "MatrixTeleportHit",
@@ -1439,32 +1448,30 @@ script.registerModule({
 }, function (module) {
     module.on("update", function () {
         module.tag = range.get()
+        targetEntity = rayTrace(range.get())
         if (mc.gameSettings.keyBindAttack.pressed && tpHitTimer.hasTimePassed(200)) {
-            targetPlayer = rayTrace(range.get())
-            if (PlayerExtensionKt.getDistanceToEntityBox(targetPlayer, mc.thePlayer) <= 10) return;
-            selectedTarget = true
+            if (PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer) < 10) return;
             packetPositions = []
 
-            if (targetPlayer) {
-                if (startJump.get() && mc.thePlayer.onGround) mc.thePlayer.motionY = startJumpMotion.get();
-                pathAlgorithm.set(new BlockPos(mc.thePlayer), new BlockPos(targetPlayer))
+            if (targetEntity) {
+                pathAlgorithm.set(new BlockPos(mc.thePlayer), new BlockPos(targetEntity))
                 path = pathAlgorithm.compute(loops.get(), heuristic.get(), diagonalSearch.get())
 
                 if (path) {
+                    if (startJump.get() && mc.thePlayer.onGround) mc.thePlayer.motionY = startJumpMotion.get();
                     for (var i = 0; i < path.length - packetIntervall.get(); i += packetIntervall.get()) {
                         var pos = path[i]
                         packetPositions.push(pos)
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pos.getX(), pos.getY(), pos.getZ(), onGround.get()), packetEvent.get())
                     }
-
                     if (path.length % packetIntervall.get() != 0) {
                         packetPositions.push(pathAlgorithm.endPos)
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pathAlgorithm.endPos.getX(), pathAlgorithm.endPos.getY(), pathAlgorithm.endPos.getZ(), onGround.get()), packetEvent.get());
                     }
-                    mc.playerController.attackEntity(mc.thePlayer, targetPlayer)
+                    mc.playerController.attackEntity(mc.thePlayer, targetEntity)
                 }
             }
-            tpHitTimer.reset(), targetPlayer = null;
+            tpHitTimer.reset(), targetEntity = null;
         }
         if (tpHitTimer.hasTimePassed(visibleTime.get())) packetPositions = [];
     })
@@ -1473,6 +1480,22 @@ script.registerModule({
             for (var i = 0; i < packetPositions.length; i++) {
                 RenderUtils.drawBlockBox(packetPositions[i], new Color(colorR.get(), colorG.get(), colorB.get()), false)
             }
+        }
+    })
+    module.on("render2D", function () {
+        if (renderTargetHUD.get() && targetEntity) {
+            var dist = PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer)
+            Gui.drawRect(470, 280, 340, 335, new Color(20, 20, 20).getRGB());
+            Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
+            mcFont.drawString(targetEntity.getName(), 346, 287, 0xFFFFFF);
+
+            Gui.drawRect(430, 301, 343, 332, new Color(50, 50, 50).getRGB());
+            mcFont.drawString(dist.toFixed(2) + " m", 346, 306, dist < 10 ? 0xFF0000 : 0xFFFFFF);
+            mcFont.drawString("distance", 346, 320, 0xFFFFFF);
+
+            Gui.drawRect(433, 301, 467, 332, new Color(50, 50, 50).getRGB());
+            GL11.glColor4f(255, 255, 255, 1)
+            GuiInventory.drawEntityOnScreen(450, 330, 13, 0, 0, targetEntity)
         }
     })
     module.on("disable", function () {
