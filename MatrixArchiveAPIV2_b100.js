@@ -9,13 +9,13 @@
 A few words to clarify...
   - Firstly, this script is an archive for old modules as there will be no development of new bypasses
   - Utility modules e.g. AutoInsultReloaded have recieved small updates in this script as they are still functional
-  - Other modules will not work but may have educational purpose
-  - I tried to credit everyone in authors properly
+  - Other modules will likely not work but may have educational purpose
+  - I tried to credit everyone in authors properly, if you feel missed out, please contact me
   - Lastly, small changes have been made to make this script compatible with the b100 legacy build
   - Enjoy!
 */
 
-//To do: add FlyModes: TNTBlinkDamageFly (+max packets value), flag longjump by shurpe, blink longjump (+max packets value), janitor work
+//To do: add FlyModes: flag longjump by shurpe, blink longjump (+max packets value), janitor work
 
 /*------------------*/
 /*      IMPORTS     */
@@ -39,6 +39,10 @@ C0BPacketEntityAction = Java.type("net.minecraft.network.play.client.C0BPacketEn
 S13PacketDestroyEntities = Java.type("net.minecraft.network.play.server.S13PacketDestroyEntities")
 S27PacketExplosion = Java.type("net.minecraft.network.play.server.S27PacketExplosion")
 C02PacketUseEntity = Java.type("net.minecraft.network.play.client.C02PacketUseEntity")
+C0CPacketInput = Java.type("net.minecraft.network.play.client.C0CPacketInput")
+S41PacketServerDifficulty = Java.type("net.minecraft.network.play.server.S41PacketServerDifficulty")
+S38PacketPlayerListItem = Java.type("net.minecraft.network.play.server.S38PacketPlayerListItem")
+S3CPacketUpdateScore = Java.type("net.minecraft.network.play.server.S3CPacketUpdateScore")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
 EntityTNTPrimed = Java.type("net.minecraft.entity.item.EntityTNTPrimed")
 Entity = Java.type("net.minecraft.entity.Entity")
@@ -46,6 +50,7 @@ File = Java.type("java.io.File")
 FileManager = Java.type("net.ccbluex.liquidbounce.file.FileManager").INSTANCE;
 FileUtils = org.apache.commons.io.FileUtils;
 MSTimer = Java.type("net.ccbluex.liquidbounce.utils.timing.MSTimer");
+Timer = java.util.Timer;
 StandardCharsets = Java.type("java.nio.charset.StandardCharsets");
 BlockPos = Java.type("net.minecraft.util.BlockPos")
 Block = Java.type("net.minecraft.block.Block")
@@ -65,7 +70,9 @@ MovementUtils = Java.type("net.ccbluex.liquidbounce.utils.movement.MovementUtils
 BlockUtils = Java.type("net.ccbluex.liquidbounce.utils.block.BlockUtils").INSTANCE
 RenderUtils = Java.type("net.ccbluex.liquidbounce.utils.render.RenderUtils").INSTANCE
 PacketUtils = Java.type("net.ccbluex.liquidbounce.utils.client.PacketUtils")
+BlinkUtils = Java.type("net.ccbluex.liquidbounce.utils.client.BlinkUtils").INSTANCE
 RotationUtils = Java.type("net.ccbluex.liquidbounce.utils.rotation.RotationUtils").INSTANCE
+RotationSettings = Java.type("net.ccbluex.liquidbounce.utils.rotation.RotationSettings")
 PlayerExtensionKt = Java.type("net.ccbluex.liquidbounce.utils.extensions.PlayerExtensionKt")
 EntityUtils = Java.type("net.ccbluex.liquidbounce.utils.attack.EntityUtils").INSTANCE
 Potion = Java.type("net.minecraft.potion.Potion")
@@ -74,12 +81,34 @@ Vec3 = Java.type("net.minecraft.util.Vec3")
 BlockSnow = Java.type("net.minecraft.block.BlockSnow")
 BlockLiquid = Java.type("net.minecraft.block.BlockLiquid")
 GuiInventory = Java.type("net.minecraft.client.gui.inventory.GuiInventory")
+ScaledResolution = Java.type("net.minecraft.client.gui.ScaledResolution")
+GlStateManager = Java.type("net.minecraft.client.renderer.GlStateManager")
+OpenGlHelper = Java.type("net.minecraft.client.renderer.OpenGlHelper")
+EntityFallingBlock = Java.type("net.minecraft.entity.item.EntityFallingBlock")
+System = Java.type("java.lang.System")
+TextureMap = Java.type("net.minecraft.client.renderer.texture.TextureMap")
+ItemCameraTransforms = Java.type("net.minecraft.client.renderer.block.model.ItemCameraTransforms")
+TileEntityItemStackRenderer = Java.type("net.minecraft.client.renderer.tileentity.TileEntityItemStackRenderer")
+BlockBanner = Java.type("net.minecraft.block.BlockBanner")
+BlockSkull = Java.type("net.minecraft.block.BlockSkull")
+BlockChest = Java.type("net.minecraft.block.BlockChest")
+BlockEnderChest = Java.type("net.minecraft.block.BlockEnderChest")
+BlockSign = Java.type("net.minecraft.block.BlockSign")
+TileEntityRendererDispatcher = Java.type("net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher")
+BlockFlowerPot = Java.type("net.minecraft.block.BlockFlowerPot")
+ClosedDoubleRange = Java.type("kotlin.ranges.ClosedFloatingPointRange")
+Keyboard = org.lwjgl.input.Keyboard
+EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
+EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
+Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
+Class = java.lang.Class;
 
 /*------------------*/
 /*  PROPERTY FUNCS  */
 /*------------------*/
 
-//Core.lib (the goat) port
+//time to mention Core.lib (the goat); I bow before this piece of code and want to highlight @CzechHek who made this library
+//extremely clean, efficient and beginner friendly
 
 Object.defineProperty(Array.prototype, "unique", {
     writable: true,
@@ -100,6 +129,75 @@ Object.defineProperty(Array.prototype, "find", {
         return returnIndex ? -1 : null;
     }
 });
+
+Object.defineProperty(Array.prototype, "pushArray", {
+    writable: true,
+    value: function (arr) Array.prototype.push.apply(this, arr)
+});
+
+function getFields(clazz) {
+    var _fields = Java.from((clazz = clazz instanceof Class ? clazz : clazz.class).getDeclaredFields());
+    while (clazz = clazz.superclass) _fields.pushArray(Java.from(clazz.getDeclaredFields()));
+    return _fields;
+}
+
+function getField(clazz, name, _field) ((_field = getFields(clazz).find(function (f) f.getName() == name)) && _field.setAccessible(true), _field);
+
+function getSRGName(clazz, name, map) {
+    if (!(clazz instanceof Class)) clazz = clazz.class;
+    if (map.containsKey(clazz.name)) {
+        for each(var entry in map.get(clazz.name).entrySet()) {
+            if (entry.getValue() == name) return entry.getKey().split("(")[0];
+        }
+    }
+    return name;
+}
+
+function getMethods(clazz) {
+    var _methods = Java.from((clazz = clazz instanceof Class ? clazz : clazz.class).getDeclaredMethods());
+    while (clazz = clazz.superclass) _methods.pushArray(Java.from(clazz.getDeclaredMethods()));
+    return _methods;
+}
+
+
+function getMethod(clazz, name, argumentArr, _method)
+((_method = getMethods(clazz).find(function (m)
+        m.getName() == name && (!argumentArr || (m.getParameterCount() == argumentArr.length && !Java.from(m.getParameterTypes()).some(function (clazz, i) {
+    if (clazz.isPrimitive() && argumentArr[i] instanceof java.lang.Number) return
+    return !clazz.isAssignableFrom(argumentArr[i].class)
+})))
+)) && _method.setAccessible(true), _method);
+
+function getArguments(argumentsObj, from, to) Array.prototype.slice.call(argumentsObj, from, to);
+
+function Reflector(object) {
+    var RemapperFields = getField(Remapper, "fields").get(Remapper), RemapperMethods = getField(Remapper, "methods").get(Remapper);
+    object && object instanceof java.lang.Object ?
+    new JSAdapter() {
+        __get__: function (name) {
+            var field = getField(object, getSRGName(object, name, RemapperFields));
+            if (field) return new Reflector(field.get(object));
+
+            var method = getMethod(object, getSRGName(object, name, remapperMethods));
+            if (method) return method;
+
+            return object[name];
+        },
+        __put__: function (name, value) {
+            var field = getField(object, getSRGName(object, name, RemapperFields));
+            field ? field.set(object, value) : object[name] = value;
+        },
+        __call__: function (name) {
+            switch (name) {
+                case "toString": return object + ""//.toString() doesn't work for java beans
+                case "valueOf": return object;
+                default:
+                    args = getArguments(arguments, 1);
+                    return getMethod(object, getSRGName(object, name, Core.remapperMethods), args).invoke(object, Java.to(args, "java.lang.Object[]"));
+            }
+        }
+    } : object;
+}
 
 /*------------------*/
 /* GLOBAL VARIABLES */
@@ -129,16 +227,18 @@ var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", 
     ], sentInsult = false, sentLink = false, lastTarget, queueTimer = new MSTimer(), sendQueue = [],
     breakDamage = 0, blockHitDelay = 0, breakingBlock, lastPlaced = null, totalFallDist = 0, cancelC04 = false,
     boosted = false, tryBoost = 0, simulateStartY, mcFont = Fonts.getFonts()[0], wasRiding = false,
-    last = null, clientChatContent = "", cIndex = null, glideMotionTicks = 0, glideTicks = 0, isBlock = false,
+    lastQueueTarget = null, clientChatContent = "", cIndex = null, glideMotionTicks = 0, glideTicks = 0, isBlock = false,
     selectTimer = new MSTimer(), renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
-    destinationPos = null, sentPackets = 0, attemptingTeleport = false, lookingAt = null, isMoving = false,
-    formattedInsult = "", replacedInsult = "", StrafeModule = ModuleManager.getModule("Strafe"), strafeStrengthValue,
-    KillAuraModule = ModuleManager.getModule("KillAura"), tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
-    SprintModule = ModuleManager.getModule("Sprint"), NoFallModule = ModuleManager.getModule("NoFall");
+    destinationPos = null, sentPackets = 0, lookingAt = null, isMoving = false,
+    formattedInsult = "", replacedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
+    mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
+    tpWait = false, lastRiddenEntity = null, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false;
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
 /*------------------*/
+
+function timeout(ms, func, _timer) (_timer = new Timer("setTimeout", true), _timer.schedule(func, ms), _timer);
 
 function isMovingHorizontally(entity) entity && entity != mc.thePlayer ? entity.lastTickPosX != entity.posX || entity.lastTickPosZ != entity.posZ : !!(mc.thePlayer.movementInput.moveForward || mc.thePlayer.movementInput.moveStrafe);
 
@@ -146,6 +246,17 @@ function isMovingVertically(entity) entity && entity != mc.thePlayer ? entity.la
 
 function entityIsMoving(entity) {
     return isMovingHorizontally(entity) || isMovingVertically(entity);
+}
+
+function canStep(stepHeight, predictDistance) {
+    if (mc.thePlayer.isCollidedHorizontally || predictDistance) {
+        var yaw = MovementUtils.getDirection(), bb = mc.thePlayer.getEntityBoundingBox(), possiblePlaces = [], otherBB, predictDistance = predictDistance || 0.01;
+        for (var i = 0; (i += 0.125) <= stepHeight;) {
+            if (!mc.theWorld.getCollidingBoundingBoxes(mc.thePlayer, bb.offset(0, i, 0)).isEmpty()) break
+            if (mc.theWorld.getCollidingBoundingBoxes(mc.thePlayer, otherBB = bb.offset(-Math.sin(yaw) * predictDistance, i, Math.cos(yaw) * predictDistance)).isEmpty() && !mc.theWorld.getCollidingBoundingBoxes(mc.thePlayer, otherBB.offset(0, -0.125, 0)).isEmpty()) possiblePlaces.push(i);
+        }
+        return possiblePlaces.length && Math.max.apply(null, possiblePlaces);
+    }
 }
 
 function clearChat() mc.ingameGUI.getChatGUI().clearChatMessages();
@@ -175,6 +286,24 @@ function getFacing(state) state.getProperties().get(BlockDirectional.FACING);
 function getBlockState(blockOrPos) blockOrPos instanceof BlockPos ? mc.theWorld.getBlockState(blockOrPos) : blockOrPos.getBlockState();
 
 function getTargetsInRange(range, entityType) Java.from(mc.theWorld.loadedEntityList).filter(function (e) e != mc.thePlayer && ((entityType ? e instanceof entityType : EntityUtils.isSelected(e, true)) && (!range || PlayerExtensionKt.getDistanceToEntityBox(e, mc.thePlayer) <= range)));
+
+function animate(target, current, speed) {
+    var larger = target > current
+
+    var difference = Math.max(target, current) - Math.min(target, current)
+    var factor = difference * speed
+
+    if (factor < 0.1) factor = 0.1
+    if (larger) current += factor; else current = target
+
+    return current;
+}
+
+function getDist(blockPosA, blockPosB) { //instead use getCenterDistance
+    var a = new Vec3(blockPosA.getX() + 0.5, blockPosA.getY() + 0.5, blockPosA.getZ() + 0.5)
+    var b = new Vec3(blockPosB.getX() + 0.5, blockPosB.getY() + 0.5, blockPosB.getZ() + 0.5)
+    return a.distanceTo(b)
+}
 
 /*------------------*/
 /*    SETTING-UP    */
@@ -221,7 +350,7 @@ AutoInsultValues = {
                     addMessage(prefix+"Lastest message containing §7'§a§lkilled by "+mc.thePlayer.getName()+"§7'")
                     addMessage("")
                     for each (var part in lastKillMessage) {
-                        var comp = new ChatComponentText(prefix+part)
+                        var comp = new ChatComponentText(prefix + part)
                         comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, part))
                         comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to select as target name position.")))
                         mc.thePlayer.addChatMessage(comp)
@@ -255,14 +384,15 @@ AutoInsultValues = {
         values: ["Internal", "Custom"],
         default: "Internal",
         isSupported: function () header2.get()
-    }),
+    }), 
     customFileValue: customFile = Setting.list({
         name: "File",
-        values: customF = Java.from(insultDir.listFiles()).map(function (file) file.getName()).filter(function (name) name != "customLetters.txt"),
+        values: customF = Java.from(insultDir.listFiles()).map(function (file) file.getName()).filter(function (name) name != "customLetters.txt").concat("", "REFRESH"),
         default: customF[0],
         onChange: function (o, n) {
-            if (n && !Java.from(insultDir.listFiles()).length) {
-                addMessage(prefix+"Couldn't find file to read!");
+            if (n && n == "REFRESH") {
+                var content = Java.from(insultDir.listFiles()).map(function (file) file.getName()).filter(function (name) name != "customLetters.txt").concat("", "REFRESH")
+                valueCustomFileReflector.values = Java.to(content, "java.lang.String[]")
             }
         },
         isSupported: function () header2.get() && insultMode.get() == "Custom"
@@ -331,8 +461,14 @@ AutoInsultValues = {
     customLettersValue: customLetters = Setting.list({
         name: "SelectSet",
         default: "",
-        values: customA = Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).filter(function (e) e.length == 26),
+        values: customA = Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).filter(function (e) e.length == 26).concat("", "REFRESH"),
         default: customA[0],
+        onChange: function (o, n) {
+            if (n && n == "REFRESH") {
+                var content = Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).filter(function (e) e.length == 26).concat("", "REFRESH")
+                valueCustomLettersReflector.values = Java.to(content, "java.lang.String[]")
+            }
+        },
         isSupported: function() header3.get() && useCustomLetters.get()
     }),
     ignoreLinkValue: ignoreLink = Setting.boolean({
@@ -369,11 +505,13 @@ AutoInsultValues = {
     })
 };
 
+var valueCustomFileReflector = new Reflector(customFile), valueCustomLettersReflector = new Reflector(customLetters);
+
 function containsLink(message) message.contains("http://") || message.contains("www.") || message.contains("https://");
 
-function extractLink(message) message.split(" ").filter(function (part) containsLink(part));
+function extractLinks(message) message.split(" ").filter(function (part) containsLink(part));
 
-function shouldReplaceLetter(lIndex, message) {
+function shouldReplaceLetter(atI, message) {
     if (!ignoreLink.get()) return true;
 
     var splitMessage = message.split(" ")
@@ -381,53 +519,76 @@ function shouldReplaceLetter(lIndex, message) {
     for (var i = 0; i < splitMessage.length; i++) {
         if (containsLink(splitMessage[i])) {
             var minIndex = message.indexOf(splitMessage[i])
-            var maxIndex = message.indexOf(splitMessage[i]) + splitMessage[i].length - 1
+            var maxIndex = minIndex + splitMessage[i].length - 1
 
-            if (lIndex >= minIndex && lIndex <= maxIndex) return false
-        }
+            if (atI >= minIndex && atI <= maxIndex) return false
+        } else continue;
     }
     return true
 }
 
 function sendInsult(targetName) {
-    userContent = Java.from(insultDir.listFiles()).length && customFile.get() ? Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) : null
+    userContent = Java.from(insultDir.listFiles()).length && Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)).length && customFile.get() ? Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) : null
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
     lastTarget = targetName
 
     sentInsult = true
-    if (!containsLink(insult) || linkFormat.get() == "NoFormatting") {
+
+    if (!containsLink(insult)) {
         formattedInsult = insult
     } else {
-        var splitInsult = insult.split(" ")
-        var format = null;
-        for (var i = 0; i < splitInsult.length; i++) { //could generally implement replacing x pattern with x2 str instead of just "."
-            if (containsLink(splitInsult[i])) {
-                switch (linkFormat.get()) {
-                    case "SurroundDots": format = surroundWith.get(); break;
-                    case "ReplaceDots": format = replaceWith.get(); break;
-                    case "NoDots": format = "";
-                    default: format = null;
-                }
-            }
-            if (format != null) { //check for format.length instead of == null?? always typeof String if set to "" initially lol
-                var formattedLink = splitInsult[i].replace(/[.]/g, format) //allow linkcount > 1 / insult and formatting exclusive to str
-                splitInsult.splice(i, 1, formattedLink)
-            }
+        var splitInsult = insult.split(" "), format;
+        switch (linkFormat.get()) {
+            case "SurroundDots": format = surroundWith.get(); break;
+            case "ReplaceDots": format = replaceWith.get(); break;
+            case "NoDots": format = ""; break;
+            default: format = null;
+        }
+        for (var i = 0; i < splitInsult.length; i++) {
+            if (!containsLink(splitInsult[i]) || format == null) continue;
+            var formattedLink = splitInsult[i].replace(/[.]/g, format)
+            splitInsult.splice(i, 1, formattedLink)
         }
         formattedInsult = splitInsult.join(" ")
         sentLink = true;
     }
     if (useCustomLetters.get()) {
         var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())]
+        replacedInsult = ""
         for (i = 0; i < formattedInsult.length; i++) {
             var letterIndex = "abcdefghijklmnopqrstuvwxyz".indexOf(formattedInsult[i].toLowerCase())
-            if (letterIndex != -1 && shouldReplaceLetter(i, formattedInsult)) {
+            if (letterIndex !== -1 && shouldReplaceLetter(i, formattedInsult)) {
                 replacedInsult += customAlphabet[letterIndex]
             } else replacedInsult += formattedInsult[i];
         }
     }
-    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult))
-    formattedInsult = "", replacedInsult = ""
+    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult)) //sometimes
+    //formattedInsult = "", replacedInsult = ""; why clear it if it gets updated anyways
+}
+
+function isCensoredByServer(serverContent) { //to handle the case message has been sent but got censored; may false positive but extremely rare
+    var m_split = serverContent.split(" "), c = (useCustomLetters.get() ? replacedInsult : formattedInsult), c_split = c.split(" "), startI;
+
+    for (var i = 0; i < m_split.length; i++) {
+        if (m_split[i].length == c_split[0].length) {
+            startI = i
+            break
+        }
+    }
+    if (startI === undefined) return false
+
+    var potInsult = m_split.slice(startI, startI + c_split.length)
+
+    if (potInsult.join(" ").length == c.length && (function() {
+        for (var j = 0; j < potInsult.length; j++) {
+            if (potInsult[j].length != c_split[j].length) return false;
+        }
+        return true;
+    })()) return true; else {
+        m_split.splice(startI, 1)
+        return isCensoredByServer(m_split.join(" "))
+    }
+    return false
 }
 
 script.registerModule({
@@ -444,7 +605,9 @@ script.registerModule({
             if (selectingPhrase && lastKillMessage.indexOf(clientChatContent) != -1) {
                 cIndex = lastKillMessage.indexOf(clientChatContent)
                 e.cancelEvent()
+
                 clearChat()
+
                 addMessage(prefix + "AutoInsultReloaded will search at the selected position for a target name.")
                 selectingPhrase = false;
             }
@@ -460,14 +623,14 @@ script.registerModule({
                 sendInsult(target)
                 lastKillMessage = serverContentArray
             } else if (sentInsult) {
-                if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins))) {
-                    if (hyperLink.get() && sentLink) { //only supports 1 link/message <-> anything else doesnt make sense anyways
+                if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins)) || isCensoredByServer(serverChatContent)) { //server (likely) displays insult for others; issue: if server sends in the same tick another packet then the whole detection is broken, only happens when e.g. when server informs you about bad message content
+                    if (hyperLink.get() && sentLink) { //adds hyperlink clientside if server doesnt support hyperlink by default
                         e.cancelEvent()
-                        addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLink(insult)[0], "§a§lClick me!")
+                        addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLinks(insult)[0], "§a§lClick me!")
                         sentLink = false;
                     }
-                } else {
-                    if (!sendQueue.includes(lastTarget) && useQueue.get()) {
+                } else { //case message got blocked e.g. chat too fast; retry sending once to prevent loop
+                    if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
                         sendQueue.push(lastTarget)
                         queueTimer.reset()
                     }
@@ -475,10 +638,6 @@ script.registerModule({
                 sentInsult = false;
             }
         }
-        if (queueTimer.hasTimePassed(sendDelay.get() * 1000) && sendQueue.length) {
-            last = sendPriority.get() == "QUEUE" ? sendQueue.shift() : sendQueue.pop();
-            sendInsult(last)
-        } if (sendQueue.includes(last)) sendQueue.splice(sendQueue.indexOf(last), 1); //only try once, cheap way -> shouldnt get pushed in queue
     });
     module.on("attack", function(e) {
         if (e.getTargetEntity() instanceof EntityPlayer) {
@@ -487,16 +646,21 @@ script.registerModule({
     });
     module.on("update", function () {
         module.tag = detectionMode.get()
+        if (sendQueue.length && queueTimer.hasTimePassed(sendDelay.get() * 1000)) {
+            lastQueueTarget = sendPriority.get() == "QUEUE" ? sendQueue.shift() : sendQueue.pop();
+            sendInsult(lastQueueTarget)
+        }
         if (currentTarget && detectionMode.get() == "Classic") {
             if (currentTarget.isDead || currentTarget.getHealth <= 0 && !mc.thePlayer.getHealth <= 0 && !mc.thePlayer.isDead && currentTarget.getLastAttacker() == mc.thePlayer && mc.thePlayer) { //Issue: sends Insult if target is out of renderdist
                 sendInsult(currentTarget.getName())
-                currentTarget = null
-                return;
+                currentTarget = null;
+                return
             }
         }
     });
     module.on("world", function () {
         sendQueue = []
+        currentTarget = null;
     })
 });
 
@@ -509,6 +673,10 @@ MatrixFuckerValues = {
     }),
     swingItem: Setting.boolean({
         name: "Swing",
+        default: true
+    }),
+    fuckerRotation: Setting.boolean({
+        name: "Rotation",
         default: true
     }),
     renderProgress: Setting.boolean({
@@ -558,7 +726,7 @@ function getBlockToBreak(bedPos, range) {
         .sort(function (a, b) getBlock(b).getPlayerRelativeBlockHardness(mc.thePlayer, mc.theWorld, b) - getBlock(a).getPlayerRelativeBlockHardness(mc.thePlayer, mc.theWorld, a))[0];
 }
 
-function breakBlock(blockPos, range, swing) {
+function breakBlock(blockPos, range, swing, rotation) {
     if (!blockPos || BlockUtils.getCenterDistance(blockPos) > range) {
         if (breakingBlock) {
             blockHitDelay = 4;
@@ -571,12 +739,26 @@ function breakBlock(blockPos, range, swing) {
     if (!breakingBlock) breakingBlock = blockPos;
 
     if (!breakDamage)
+        
         PacketUtils.sendPacket(new C07PacketPlayerDigging(C07PacketPlayerDigging.Action.START_DESTROY_BLOCK, blockPos, EnumFacing.DOWN), true);
 
     breakDamage += getBlock(blockPos).getPlayerRelativeBlockHardness(mc.thePlayer, mc.theWorld, blockPos);
     if (swing == true) {
         mc.thePlayer.swingItem()
     } else PacketUtils.sendPacket(new C0APacketAnimation(), true);
+
+    if (rotation == true) { //atp its easier to not use utils lmao
+        var rotVec = RotationUtils.faceBlock(breakingBlock, true, false, new ClosedDoubleRange({
+                getStart: function () { return 0.0 },
+                getEndInclusive: function () { return 1.0 },
+                contains: function (value) { return value >= 0.0 && value <= 1.0 },
+                lessThanOrEqual: function (a, b) { return a <= b },
+                isEmpty: function () { return false }
+            })
+        );
+
+        rotVec && RotationUtils.setTargetRotation(rotVec.rotation, new RotationSettings(ModuleManager.getModule("Fucker"), function () true), 1)
+    }
 
     if (breakDamage >= 1) {
         PacketUtils.sendPacket(new C07PacketPlayerDigging(C07PacketPlayerDigging.Action.STOP_DESTROY_BLOCK, blockPos, EnumFacing.DOWN), true);
@@ -596,11 +778,11 @@ script.registerModule({
     module.on("update", function () {
         module.tag = module.settings.range.get().toFixed(2)
         if (blockHitDelay > 0) return blockHitDelay--;
-        if (breakingBlock) return breakBlock(breakingBlock, module.settings.range.get(), module.settings.swingItem.get());
+        if (breakingBlock) return breakBlock(breakingBlock, module.settings.range.get(), module.settings.swingItem.get(), module.settings.fuckerRotation.get());
         var bedPos = getClosestBedPos(module.settings.range.get())
         if (!bedPos) return;
 
-        breakBlock(getBlockToBreak(bedPos, module.settings.range.get()), module.settings.range.get(), module.settings.swingItem.get());
+        breakBlock(getBlockToBreak(bedPos, module.settings.range.get()), module.settings.range.get(), module.settings.swingItem.get(), module.settings.fuckerRotation.get());
     });
     module.on("render2D", function () {
         if (!breakDamage || !module.settings.renderProgress.get()) return
@@ -635,7 +817,7 @@ script.registerModule({
 MatrixFlyValues = {
     flyModeValue: flyMode = Setting.list({
         name: "FlyMode",
-        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion"],
+        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion", "TNTBlink"],
         default: "FakeBlock"
     }),
     cancelModeValue: cancelMode = Setting.list({
@@ -668,11 +850,11 @@ MatrixFlyValues = {
         default: true,
         isSupported: function () flyMode.get() == "CancelC04" && cancelMode.get() == "Normal"
     }),
-    disableOnPercentageValue: disableOnPercentage = Setting.float({
-        name: "RemainingHealth [%]",
-        min: 0.05,
-        max: 0.95,
-        default: 0.05,
+    disableOnPercentageValue: disableOnPercentage = Setting.integer({
+        name: "RemainingHealth[%]",
+        min: 1,
+        max: 100,
+        default: 95,
         isSupported: function () flyMode.get() == "CancelC04" && cancelMode.get() == "Normal" && disableOn.get()
     }),
     boatFlyXZValue: boatFlyXZ = Setting.float({
@@ -723,62 +905,78 @@ MatrixFlyValues = {
         max: 5,
         default: 1.5,
         isSupported: function () flyMode.get() == "TNTMotion"
+    }),
+    tntBlinkBoostValue: tntBlinkBoost = Setting.float({
+        name: "BoostXZ",
+        min: 0.5,
+        max: 5,
+        default: 1,
+        isSupported: function() flyMode.get() == "TNTBlink"
+    }),
+    stopOnMaxPacketsValue: stopOnMaxPackets = Setting.boolean({
+        name: "StopOnMaxPackets",
+        default: true,
+        isSupported: function() flyMode.get() == "TNTBlink"
+    }),
+    tntBlinkMaxPacketsValue: tntBlinkMaxPackets = Setting.integer({
+        name: "MaxBlinkPackets",
+        min: 10,
+        max: 100,
+        default: 50,
+        isSupported: function() flyMode.get() == "TNTBlink" && stopOnMaxPackets.get()
     })
 }
 
-function predictFallDamage() {
-    var ResistanceEffect = mc.thePlayer.getActivePotionEffect(Potion.resistance),
-        baseDamage = totalFallDist - 2, finalDamage = 0, ffLevel = null, protLevel = null,
-        JumpBoostEffect = mc.thePlayer.getActivePotionEffect(Potion.jump);
+function approximateFallDamage() {
+    var ResistanceEffect = mc.thePlayer.getActivePotionEffect(Potion.resistance), JumpBoostEffect = mc.thePlayer.getActivePotionEffect(Potion.jump),
+        baseDamage = totalFallDist - 1.5 - (JumpBoostEffect ? JumpBoostEffect.getAmplifier() + 1 : 0), finalDamage = 0; //account for onDisable mc.thePlayer.fallDistance ~ += 1.5
 
-    if (totalFallDist <= 2 || baseDamage < 0 || finalDamage < 0) return 0; //safe fall dist for EntityPlayer = 3, however account for fallDist ~+= 1 onDisable
+    if (baseDamage <= 0) return 0
 
-    var footSlot = mc.thePlayer.getCurrentArmor(0)
+    var tEPF = 0
 
-    if (footSlot && footSlot.isItemEnchanted()) {
-        var enchantmentList = [], eTagList = footSlot.getEnchantmentTagList();
+    for (var i = 0; i < 4; i++) { //for each armor piece with protection or feather falling increase dmg reduction
+        var slotStack = mc.thePlayer.getCurrentArmor(i)
+        if (!slotStack || (slotStack && !slotStack.isItemEnchanted())) continue;
 
-        for (var i = 0; i < eTagList.tagCount(); i++) {
-            var tag = eTagList.getCompoundTagAt(i)
-            var tagId = tag.getTag("id").toString()
-            var tagLevel = tag.getTag("lvl").toString()
-            enchantmentList.push([parseInt(tagId.substring(0, tagId.length - 1)), parseInt(tagLevel.substring(0, tagLevel.length - 1))])
-        }
-        for (var j = 0; j < enchantmentList.length; j++) {
-            if (enchantmentList[j][0] == 2) ffLevel = enchantmentList[j][1];
-            else if (enchantmentList[j][0] == 0) protLevel = enchantmentList[j][1];
-            else continue;
+        var enchanmentTagList = slotStack.getEnchantmentTagList()
+
+        for (var j = 0; j < enchanmentTagList.tagCount(); j++) {
+            var tag = enchanmentTagList.getCompoundTagAt(j)
+            var tagId = tag.getShort("id")
+            var tagLevel = tag.getShort("lvl")
+
+            tEPF += (function(id, lvl) {
+                if (id != 0 && id != 2) return 0;
+                var modifier = id == 0 ? 0.75 : 2.5
+                return Math.floor((6 + Math.pow(lvl, 2)) * modifier / 3)
+            })(tagId, tagLevel)
         }
     }
 
-    if (ffLevel && !protLevel) {
-        finalDamage = baseDamage * (1 - ((12 * ffLevel) / 100))
-    } else if (protLevel && !ffLevel) {
-        finalDamage = baseDamage * (1 - ((4 * protLevel) / 100))
-    } else if (protLevel && ffLevel) {
-        var ffRed = (12 * ffLevel) / 100;
-        var protRed = (4 * protLevel) / 100
-        finalDamage = baseDamage * (1 - ffRed) * (1 - protRed)
-    } else if (!protLevel && !ffLevel || !footSlot) finalDamage = baseDamage;
+    tEPF = Math.ceil(tEPF * 0.75) //according to forum sources: random value (0.5, 1) is used, however this is crap to work with; avg 0.75
+    if (tEPF > 20) tEPF = 20
 
-    if (JumpBoostEffect) finalDamage -= JumpBoostEffect.getAmplifier() + 1;
+    finalDamage = baseDamage * (1 - tEPF * 0.04)
 
-    if (ResistanceEffect && ResistanceEffect.getAmplifier() <= 3) {
-        var resLevel = ResistanceEffect.getAmplifier() + 1
-        var resRed = 1 - (0.2 * resLevel)
-        finalDamage = finalDamage * resRed;
+    if (ResistanceEffect) {
+        if (ResistanceEffect.getAmplifier() <= 3) {
+            var resLevel = ResistanceEffect.getAmplifier() + 1
+            var resRed = 1 - (0.2 * resLevel)
+            finalDamage = finalDamage * resRed;
+        } else return 0;
     }
 
-    return Math.ceil(finalDamage);
+    return Math.ceil(finalDamage)
 }
 
 function canRecieveFallDMG() {
-    var ResistanceEffect = mc.thePlayer.getActivePotionEffect(Potion.resistance)
-    if ((ResistanceEffect && ResistanceEffect.getAmplifier() >= 4) || NoFallModule.getState() || mc.thePlayer.isSpectator() || mc.thePlayer.isEntityInvulnerable(DamageSource.fall) || mc.thePlayer.capabilities.isCreativeMode || mc.thePlayer.capabilities.disableDamage) return false;
+    var ResistanceEffect = mc.thePlayer.getActivePotionEffect(Potion.resistance), NoFallModule = ModuleManager.getModule("NoFall");
+    if (ResistanceEffect && ResistanceEffect.getAmplifier() >= 4 || NoFallModule.getState() || mc.thePlayer.isSpectator() || mc.thePlayer.isEntityInvulnerable(DamageSource.fall) || mc.thePlayer.capabilities.isCreativeMode || mc.thePlayer.capabilities.disableDamage) return false;
     return true
 }
 
-function getRelativeFallDMG() predictFallDamage() / mc.thePlayer.getHealth();
+function getRelativeFallDMG() approximateFallDamage() / mc.thePlayer.getHealth();
 
 script.registerModule({
     name: "MatrixFly",
@@ -828,7 +1026,7 @@ script.registerModule({
                 break;
             case "CancelC04":
                 if (cancelMode.get() == "Normal") {
-                    if (canRecieveFallDMG() && disableOn.get() && (1 - getRelativeFallDMG()) <= disableOnPercentage.get()) {
+                    if (canRecieveFallDMG() && disableOn.get() && getRelativeFallDMG() >= disableOnPercentage.get() / 100) {
                         MatrixFlyModule.setState(false)
                     }
                     if (mc.thePlayer.fallDistance >= 1) {
@@ -907,6 +1105,27 @@ script.registerModule({
                     MovementUtils.strafe(1)
                 }
                 if ((mc.thePlayer.onGround && tntFly && tntStartBoost) || (mc.gameSettings.keyBindSneak.pressed && tntFly)) tntFly = false, tntStartBoost = false;
+                break;
+            case "TNTBlink":
+                if (tntFly) {
+                    mc.thePlayer.motionY = 0
+                    MovementUtils.strafe(tntBlinkBoost.get())
+
+                    if (BlinkUtils.packets.size() >= tntBlinkMaxPackets.get() && stopOnMaxPackets.get()) {
+                        BlinkUtils.unblink()
+                        mc.thePlayer.motionX = 0;
+                        mc.thePlayer.motionZ = 0;
+                        tntFly = false;
+                    }
+                    if (mc.gameSettings.keyBindSneak.pressed) {
+                        BlinkUtils.unblink()
+                        mc.thePlayer.motionX = 0
+                        mc.thePlayer.motionZ = 0
+                        tntFly = false
+
+                    }
+                }
+                break;
         }
     });
     module.on("packet", function (e) {
@@ -921,14 +1140,17 @@ script.registerModule({
                 e.cancelEvent()
             }
         }
-        if (flyMode.get() == "TNTMotion" && packet instanceof S27PacketExplosion && getTargetsInRange(8, EntityTNTPrimed).length) {
+        if ((flyMode.get() == "TNTMotion" || flyMode.get() == "TNTBlink") && packet instanceof S27PacketExplosion && getTargetsInRange(8, EntityTNTPrimed).length) {
             tntFly = true
-            if (mc.thePlayer.onGround) mc.thePlayer.jump();
+            if (mc.thePlayer.onGround && flyMode.get() == "TNTMotion") mc.thePlayer.jump();
+        }
+        if (flyMode.get() == "TNTBlink" && tntFly) {
+            BlinkUtils.blink(packet, e, true, true)
         }
     });
     module.on("render2D", function () {
         if (!renderAirTime.get() || flyMode.get() != "CancelC04" || cancelMode.get() != "Normal" || !canRecieveFallDMG() || mc.thePlayer.onGround) return;
-
+        
         var percentage = getRelativeFallDMG() * 100,
             renderDMG = getRelativeFallDMG() < 1 ? getRelativeFallDMG() : 1
 
@@ -949,7 +1171,7 @@ script.registerModule({
         if (flyMode.get() == "S08SimulateSetback") ModuleManager.getModule("MatrixFly").setState(false) //prevent infinite loading screen
     })
     module.on("disable", function () {
-        if (lastPlaced) mc.theWorld.setBlockToAir(lastPlaced);
+        lastPlaced && mc.theWorld.setBlockToAir(lastPlaced);
         mc.thePlayer.fallDistance = totalFallDist //allow NoFall MLG to catch fall
         mc.timer.timerSpeed = 1;
         tryBoost = 0;
@@ -957,6 +1179,7 @@ script.registerModule({
         boosted = false
         tntFly = false
         tntStartBoost = false
+        BlinkUtils.unblink()
     })
 });
 
@@ -966,19 +1189,133 @@ MatrixClickTPValues = {
         values: ["left", "middle", "right"],
         default: "middle"
     }),
+    clickTpModeValue: clickTpMode = Setting.list({
+        name: "Mode",
+        values: ["PacketSpam", "BoatCycleDesync"],
+        default: "BoatCycleDesync"
+    }),
     maxPacketsValue: maxPackets = Setting.integer({
         name: "MaxPackets",
-        min: 80,
-        max: 200,
-        default: 100
+        min: 10,
+        max: 1000,
+        default: 20
+    }),
+    flagInitiationPacketsValue: flagInitiationPackets = Setting.integer({
+        name: "FlagInitiationPackets",
+        min: 1,
+        max: 10,
+        default: 1,
+        isSupported: function() clickTpMode.get() != "PacketSpam"
+    }),
+    tpWaitSecondsValue: tpWaitSeconds = Setting.integer({
+        name: "TPWaitSeconds[s]",
+        min: 1,
+        max: 5,
+        default: 2,
+        isSupported: function() clickTpMode.get() == "BoatCycleDesync"
+    }),
+    finalTpPacketDelayValue: finalTpPacketDelay = Setting.float({
+        name: "FinalTpPacketDelay[s]",
+        min: 0.5,
+        max: 5,
+        default: 1,
+        isSupported: function() clickTpMode.get() == "BoatDesyncInstant"
+    }),
+    tpTimerValue: tpTimer = Setting.float({
+        name: "TimerSpeed",
+        min: 0.1,
+        max: 2,
+        default: 0.3
+    }),
+    freeCamSelectOnControlValue: freeCamSelectOnControl = Setting.boolean({
+        name: "FreeCamSelectOnControl",
+        default: true
     })
 }
 
-function buttonPressed() {
+var valueMaxPacketsReflector = new Reflector(maxPackets)
+
+function isButtonPressed() {
     switch (mouseButton.get()) {
         case "left": return mc.gameSettings.keyBindAttack.pressed; break;
         case "middle": return mc.gameSettings.keyBindPickBlock.pressed; break;
         case "right": return mc.gameSettings.keyBindUseItem.pressed; break;
+        default: false;
+    }
+}
+
+function hasArrived() {
+    return mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ() || getDist(destinationPos, new BlockPos(mc.thePlayer)) <= 3 && !ModuleManager.getModule("FreeCam").getState()
+}
+
+function drawDestinationBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //GuiInventory.drawEntityOnScreen() only takes instanceof EntityLiving; this is a bit cheap ngl, but easy
+    var state = mc.theWorld.getBlockState(blockPos);
+    var block = state.getBlock()
+
+    var entity = new EntityFallingBlock(mc.theWorld, 0.0, 0.0, 0.0, state);
+
+    var tileEntity = mc.theWorld.getTileEntity(blockPos)
+    var tileEntityRender = tileEntity && [BlockBanner, BlockChest, BlockEnderChest, BlockSign, BlockSkull, BlockFlowerPot].some(function (c) block instanceof c)
+    //some TileEntities dont have models that can be rendered with RenderManager, instead use TileEntityRendererDispatcher
+    //however this function has a different rotation axis which is why if tileEntityRender a correction is necessary
+    //regardless, some blocks may not be rendered e.g. FlowerPot; fix ts
+
+    GlStateManager.pushMatrix();
+
+    GlStateManager.enableDepth();
+    GlStateManager.depthMask(true);
+    GlStateManager.clear(256);
+
+    GlStateManager.translate(x, y, 150.0);
+
+    tileEntityRender && GlStateManager.translate(0.5, 0.5, 0.5);
+
+    GlStateManager.scale(-scale, scale, scale);
+
+    GlStateManager.rotate(180.0, 0.0, 0.0, 1.0);
+    GlStateManager.rotate(pitch, 1.0, 0.0, 0.0);
+    GlStateManager.rotate(yaw, 0.0, 1.0, 0.0);
+
+    tileEntityRender && GlStateManager.translate(-0.5, -0.5, -0.5);
+
+    RenderHelper.enableStandardItemLighting();
+    GlStateManager.enableRescaleNormal();
+    GlStateManager.color(1.0, 1.0, 1.0, 1.0);
+
+    var renderManager = mc.getRenderManager();
+    renderManager.setRenderShadow(false);
+
+    tileEntityRender ? TileEntityRendererDispatcher.instance.renderTileEntityAt(tileEntity, 0.0, 0.0, 0.0, 1.0) : renderManager.doRenderEntity(entity, 0.0, 0.0, 0.0, 0.0, 1.0, false);
+
+    renderManager.setRenderShadow(true);
+
+    RenderHelper.disableStandardItemLighting();
+
+    GlStateManager.popMatrix();
+
+    mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+}
+
+function handleAction(action, e) {
+    action || null;  e || null; e ? packet = e.getPacket() : null;
+    switch (action) {
+        case "initiateFlag":
+            for (var i = 0; i <= flagInitiationPackets.get(); i++) {
+                PacketUtils.sendPacket(new C04PacketPlayerPosition(destinationPos.getX(), destinationPos.getY() + 1, destinationPos.getZ(), true), true)
+                sentPackets += 1
+            }
+            break;
+        case "desync":
+            mc.thePlayer.setPosition(packet.getX(), packet.getY(), packet.getZ())
+            PacketUtils.sendPacket(new C06PacketPlayerPosLook(destinationPos.getX(), destinationPos.getY() + 1, destinationPos.getZ(), packet.getYaw(), packet.getPitch(), true), false)
+            PacketUtils.sendPacket(new C06PacketPlayerPosLook(destinationPos.getX(), destinationPos.getY() + 100, destinationPos.getZ(), packet.getYaw(), packet.getPitch(), false), false)
+            e.cancelEvent()
+            sentPackets += 2
+            break;
+        default:
+            PacketUtils.sendPacket(new C04PacketPlayerPosition(destinationPos.getX(), destinationPos.getY(), destinationPos.getZ(), true), true)
+            sentPackets += 1
+            break;
     }
 }
 
@@ -990,70 +1327,122 @@ script.registerModule({
 }, function (module) {
     module.on("update", function () {
         module.tag = mouseButton.get()
-        var MatrixTeleportModule = ModuleManager.getModule("MatrixClickTP")
-        if (!destinationPos) return
-        if (mc.thePlayer.isSpectator()) MatrixTeleportModule.setState(false)
 
-        attemptingTeleport = true
-        sentPackets++;
-        PacketUtils.sendPacket(new C04PacketPlayerPosition(destinationPos.getX(), destinationPos.getY(), destinationPos.getZ(), true), false)
-
-        if (sentPackets >= maxPackets.get()) {
-            addMessage(prefix + "Teleport failed!")
-            addMessage(prefix + "Sent §c§l" + sentPackets + " §7packets")
-            MatrixTeleportModule.setState(false)
-        } else if (mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ()) {
-            addMessage(prefix + "Teleported successfully with §c§l" + sentPackets + " §7packets!")
-            MatrixTeleportModule.setState(false)
+        if (!destinationPos && freeCamSelectOnControl.get() && Keyboard.isKeyDown(Keyboard.KEY_LCONTROL)) {
+            if (clickTpMode.get() != "PacketSpam" ) {
+                mc.thePlayer.isRiding() && ModuleManager.getModule("FreeCam").setState(true)
+            } else ModuleManager.getModule("FreeCam").setState(true);
         }
+
+        if (!destinationPos) return;
+
+        mc.timer.timerSpeed = tpTimer.get()
+
+        if (clickTpMode.get() == "PacketSpam") handleAction();
     })
     module.on("render3D", function () {
         lookingAt = mc.thePlayer.rayTrace(255, 1)
-        if (lookingAt.typeOfHit == "MISS") return;
+
+        if (lookingAt.typeOfHit == "MISS" && !destinationPos) return lookPos = null;
 
         lookPos = lookingAt.getBlockPos()
 
-        if (buttonPressed() && selectTimer.hasTimePassed(400) && !attemptingTeleport) {
+        if (isButtonPressed() && selectTimer.hasTimePassed(400) && !destinationPos) {
             destinationPos = lookPos
 
             renderSelected = true
-            attemptingTeleport = true
+
+            mts = 0;
+
+            if (clickTpMode.get() != "PacketSpam") {
+                if (mc.thePlayer.isRiding()) {
+                    handleAction("initiateFlag")
+                } else {
+                    ModuleManager.getModule("MatrixClickTP").setState(false)
+                    addMessage("")
+                    addMessage(prefix + "Please §c§lride an entity§7 while §c§lselecting!")
+                    addMessage("");
+                }
+            }
 
             selectTimer.reset()
             renderSelectedTimer.reset()
-        } if (renderSelectedTimer.hasTimePassed(400)) renderSelected = false;
+        }
 
-        if (!renderSelected && !attemptingTeleport) {
+        if (renderSelectedTimer.hasTimePassed(400)) renderSelected = false;
+
+        if (!renderSelected && !destinationPos) {
             RenderUtils.drawBlockBox(lookPos, Color.GREEN, true)
-        } else if (renderSelected) {
+        } else if (renderSelected && destinationPos) {
             RenderUtils.drawBlockBox(destinationPos, Color.RED, true)
-        } else if (attemptingTeleport) {
+        } else if (destinationPos && !renderSelected) {
             RenderUtils.drawBlockBox(destinationPos, Color.ORANGE, true)
         }
-    })
+    });
     module.on("render2D", function () {
-        if (!lookPos) return;
+        var screenWidth = new ScaledResolution(mc).getScaledWidth(), screenHeight = new ScaledResolution(mc).getScaledHeight();
 
-        if (!renderSelected && !attemptingTeleport) {
-            Gui.drawRect(470, 280, 340, 335, new Color(20, 20, 20).getRGB());
-            Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
-            mcFont.drawString("Looking at: (ID: " + Block.getIdFromBlock(getBlock(lookPos)) + ")", 346, 286, 0xFFFFFF);
+        if (!renderSelected && !destinationPos && lookPos) {
+            Gui.drawRect(screenWidth / 2 - 10, screenHeight / 2 + 10, screenWidth / 2 - 140, screenHeight / 2 + 65, new Color(20, 20, 20).getRGB());
+            Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 13, screenWidth / 2 - 137, screenHeight / 2 + 28, new Color(50, 50, 50).getRGB());
+            mcFont.drawString("Looking at: (ID: " + Block.getIdFromBlock(getBlock(lookPos)) + ")", screenWidth / 2 - 134, screenHeight / 2 + 16, 0xFFFFFF);
 
-            Gui.drawRect(467, 301, 343, 332, new Color(50, 50, 50).getRGB());
-            mcFont.drawString(getBlockName(lookPos).toUpperCase(), 345, 305, 0xFFFFFF);
-            mcFont.drawString(mouseButton.get() + "-Click to select!", 345, 320, 0xFFFFFF);
-        } else if (attemptingTeleport) {
-            Gui.drawRect(470, 280, 340, 301, new Color(20, 20, 20).getRGB());
-            Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
-            mcFont.drawString("§a§lSelected! §a" + destinationPos.getX() + " " + destinationPos.getY() + " " + destinationPos.getZ(), 346, 286, 0xFFFFFF);
+            Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 31, screenWidth / 2 - 137, screenHeight / 2 + 62, new Color(50, 50, 50).getRGB());
+            mcFont.drawString(getBlockName(lookPos).toUpperCase(), screenWidth / 2 - 134, screenHeight / 2 + 35, 0xFFFFFF);
+            mcFont.drawString(mouseButton.get() + "-Click to select!", screenWidth / 2 - 134, screenHeight / 2 + 50, 0xFFFFFF);
+        }
+
+        if (!destinationPos) return;
+
+        var MatrixTeleportModule = ModuleManager.getModule("MatrixClickTP")
+
+        if (hasArrived()) {
+            addMessage(prefix + "Teleported successfully with §c§l" + (clickTpMode.get() == "PacketSpam" ? sentPackets : finalPackets) + " §7packets!")
+            MatrixTeleportModule.setState(false)
+        } else if (sentPackets >= maxPackets.get()) {
+            if (clickTpMode.get() == "PacketSpam") {
+                addMessage(prefix + "Teleport failed!")
+                addMessage(prefix + "Sent §c§l" + sentPackets + " §7packets")
+                MatrixTeleportModule.setState(false)
+            } else if (clickTpMode.get() == "BoatCycleDesync") {
+                tpWait = true
+                finalPackets += sentPackets
+                sentPackets = 0;
+                tpWaitTimer.reset()
+            }
+        } else if (!hasArrived() && clickTpMode.get() == "BoatCycleDesync" && !mc.thePlayer.isRiding()) MatrixTeleportModule.setState(false), addMessage(""), addMessage(prefix + "§c§lCanceled Teleport!"), addMessage(prefix + "Dismounted too early!"), addMessage("");
+
+        ModuleManager.getModule("FreeCam").setState(false)
+
+        if (tpWaitTimer.hasTimePassed(tpWaitSeconds.get() * 1000) && tpWait) handleAction("initiateFlag"), tpWait = false;
+
+        mts = animate(15, mts, 0.25)
+        drawDestinationBlockOnScreen(destinationPos, screenWidth / 2, screenHeight / 2 + 40, mts, (System.currentTimeMillis() / 10) % 360, 0);
+        mcFont.drawString("§6attempting...", screenWidth / 2 - 25, screenHeight / 2 + 10, 0xFFFFFF);
+    })
+    module.on("packet", function (e) {
+        var packet = e.getPacket()
+
+        if (mc.thePlayer.isRiding() && destinationPos && clickTpMode.get() != "PacketSpam") { //this way because i want to add another boat mode
+            if (packet instanceof S08PacketPlayerPosLook) {
+                if (clickTpMode.get() == "BoatCycleDesync") !tpWait && handleAction("desync", e);
+            }
         }
     })
     module.on("disable", function () {
         destinationPos = null
         sentPackets = 0
-        attemptingTeleport = false
         lookingAt = null
         lookPos = null
+        mc.timer.timerSpeed = 1
+        finalPackets = 0;
+        tpWait = false;
+        lastRiddenEntity = null
+
+        ModuleManager.getModule("FreeCam").setState(false)
+    })
+    module.on("world", function () {
+        ModuleManager.getModule("MatrixClickTP").setState(false)
     })
 });
 
@@ -1089,7 +1478,7 @@ script.registerModule({
         module.tag = speedMode.get()
         switch (speedMode.get()) {
             case "OnGround":
-                if (!mc.gameSettings.keyBindJump.pressed && MovementUtils.isOnGround(0.001)) {
+                if (!mc.gameSettings.keyBindJump.pressed && MovementUtils.isOnGround(0.001) && !mc.thePlayer.isCollidedHorizontally) {
                     mc.thePlayer.motionY = 0;
                     if (mc.thePlayer.ticksExisted % 2 == 0 && entityIsMoving(mc.thePlayer)) {
                         MovementUtils.strafe(onGroundBoost.get())
@@ -1128,6 +1517,11 @@ MatrixUtilityValues = {
         name: "CombatStrafe",
         default: true
     }),
+    autoJumpValue: autoJump = Setting.boolean({
+        name: "AutoJump",
+        default: false,
+        isSupported: function() combatStrafe.get()
+    }),
     activationModeValue: activationMode = Setting.list({
         name: "ActivationMode",
         values: ["KillAuraRange", "Combat"],
@@ -1149,7 +1543,61 @@ MatrixUtilityValues = {
     returnLastPosValue: returnLastPos = Setting.boolean({
         name: "ReturnToLastDeathPos",
         default: false
+    }),
+    spacerValu7ehf6328: spacer7ehf6328 = Setting.boolean({
+        name: "",
+        default: false,
+        isSupported: function() returnLastPos.get()
+    }),
+    antiBotValue: antiBot = Setting.boolean({
+        name: "AntiBot",
+        default: true
+    }),
+    antiBotModeValue: antiBotMode = Setting.list({
+        name: "Mode",
+        values: ["OldZombie", "CzechHek", "DuplicateProfile"],
+        default: "DuplicateProfile",
+        isSupported: function() antiBot.get()
+    }),
+    debugRemovalValue: debugRemoval = Setting.boolean({
+        name: "Debug",
+        default: false,
+        isSupported: function() antiBot.get()
+    }),
+    spacerValue738437h: spacer738437h = Setting.boolean({
+        name: "",
+        default: false,
+        isSupported: function() antiBot.get()
+    }),
+    stepValue: step = Setting.boolean({
+        name: "Step",
+        default: true
+    }),
+    stepPredictValue: stepPredict = Setting.float({
+        name: "PredictSize",
+        min: 0.0,
+        max: 1.0,
+        default: 0.45,
+        isSupported: function() step.get()
+    }),
+    stepTimerValue: stepTimer = Setting.float({
+        name: "Timer",
+        min: 0.1,
+        max: 3.0,
+        default: 1.0,
+        isSupported: function() step.get()
     })
+}
+
+function isPlayerBot(entity) {
+    var playerInfoMap = Java.from(mc.getNetHandler().getPlayerInfoMap())
+    var entityGameProfile = entity.getGameProfile()
+
+    return playerInfoMap.some(function (info) {
+        var gameProfile = info.getGameProfile()
+
+        return gameProfile.getName() == entityGameProfile.getName() && !gameProfile.id.equals(entityGameProfile.id)
+    });
 }
 
 script.registerModule({
@@ -1159,10 +1607,16 @@ script.registerModule({
     settings: MatrixUtilityValues,
 }, function (module) {
     module.on("update", function () {
-        strafeStrengthValue = StrafeModule.getValue("Strength").get()
-        killAuraRangeValue = KillAuraModule.getValue("Range").get()
+        var StrafeModule = ModuleManager.getModule("Strafe"), KillAuraModule = ModuleManager.getModule("KillAura"), SprintModule = ModuleManager.getModule("Sprint"), strafeStrengthValue = StrafeModule.getValue("Strength").get(), killAuraRangeValue = KillAuraModule.getValue("Range").get();
+
         if (combatStrafe.get()) SprintModule.setState(true);
-        if (activationMode.get() == "KillAuraRange" && combatStrafe.get() && (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) && getTargetsInRange(killAuraRangeValue, EntityPlayer).length && entityIsMoving(mc.thePlayer)) MovementUtils.strafe(combatStrafeSpeed.get());
+
+        if (activationMode.get() == "KillAuraRange" && combatStrafe.get() &&
+            (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) &&
+            getTargetsInRange(killAuraRangeValue, EntityPlayer).length && entityIsMoving(mc.thePlayer)) {
+            MovementUtils.strafe(combatStrafeSpeed.get())
+            if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
+        }
 
         if (returnLastPos.get()) {
             if (mc.thePlayer.onGround) returnToLastOnGroundPos = new BlockPos(mc.thePlayer).down(1)
@@ -1170,10 +1624,72 @@ script.registerModule({
                 PacketUtils.sendPacket(new C04PacketPlayerPosition(returnToLastOnGroundPos.getX(), returnToLastOnGroundPos.getY(), returnToLastOnGroundPos.getZ(), true), false)
             }
         }
+
+        if (step.get() && !destinationPos) {
+            if (canStep(1, stepPredict.get()) && isMovingHorizontally(mc.thePlayer) && !(mc.thePlayer.fallDistance || mc.thePlayer.isInWater() || mc.thePlayer.isOnLadder())) {
+                isStepping = mc.timer.timerSpeed = stepTimer.get();
+            } else {
+                mc.timer.timerSpeed = 1;
+                isStepping = false;
+            }
+            if (isStepping) {
+                mc.thePlayer.onGround = true;
+                mc.thePlayer.motionY = 0;
+                mc.thePlayer.jump();
+                isStepping = false
+            }
+        }
+    })
+    module.on("packet", function (e) {
+        var packet = e.getPacket()
+
+        if (step.get() && packet instanceof C03PacketPlayer && isStepping) {
+            packet.onGround = true
+        }
+
+        if (antiBot.get()) {
+            switch (antiBotMode.get()) {
+                case "OldZombie":
+                    getTargetsInRange(10, EntityZombie).filter(function (z) z.isInvisible()).map(function (bot) {
+                        mc.theWorld.removeEntity(bot)
+                        debugRemoval.get() && addMessage(prefix + "Removed: " + bot.getName());
+                    });
+                    break;
+                case "CzechHek":
+                    if (packet instanceof S41PacketServerDifficulty) wasAdded = false;
+                    if (mc.thePlayer && packet instanceof S38PacketPlayerListItem && packet.getAction() == "ADD_PLAYER") {
+                        var info = packet.getEntries().get(0), name = info.getProfile().getName();
+                        if (!wasAdded) wasAdded = name == mc.thePlayer.getName();
+                        else if (!mc.thePlayer.isSpectator() && !mc.thePlayer.capabilities.allowFlying && info.getPing() && info.getGameMode() != "NOT_SET") {
+                            e.cancelEvent();
+                            debugRemoval.get() && addMessage(prefix + "Removed: §c§l" + name);
+                        }
+                    }
+                    break;
+                case "DuplicateProfile":
+                    var entityList = mc.theWorld.loadedEntityList
+                    for (var i = 0; i < entityList.length; i++) {
+                        var entity = entityList[i]
+                        if (!(entity instanceof EntityPlayer) || entity == mc.thePlayer) continue;
+
+                        if (isPlayerBot(entity)) {
+                            mc.theWorld.removeEntity(entity)
+                            debugRemoval.get() && addMessage(prefix + "Removed: §c§l" + entity.getName());
+                        }
+                    }
+                    break;
+            }
+        }
     })
     module.on("attack", function (e) {
-        var target = e.getTargetEntity()
-        if (target && activationMode.get() == "Combat" && combatStrafe.get() && (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) && PlayerExtensionKt.getDistanceToEntityBox(target, mc.thePlayer) <= killAuraRangeValue && entityIsMoving(mc.thePlayer)) MovementUtils.strafe(combatStrafeSpeed.get());
+        var target = e.getTargetEntity(), StrafeModule = ModuleManager.getModule("Strafe"), KillAuraModule = ModuleManager.getModule("KillAura"), strafeStrengthValue = StrafeModule.getValue("Strength").get(), killAuraRangeValue = KillAuraModule.getValue("Range").get();
+        if (target && activationMode.get() == "Combat" && combatStrafe.get()
+            && (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) &&
+            PlayerExtensionKt.getDistanceToEntityBox(target, mc.thePlayer) <= killAuraRangeValue &&
+            entityIsMoving(mc.thePlayer)) {
+            MovementUtils.strafe(combatStrafeSpeed.get());
+            if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
+        }
     })
     module.on("render3D", function () {
         if (!mc.thePlayer.isSpectator() || !returnLastPos.get() || !returnToLastOnGroundPos) return
@@ -1190,7 +1706,7 @@ MatrixTeleportHitValues = {
     }),
     diagonalSearchValue: diagonalSearch = Setting.boolean({
         name: "DiagonalPathSearch",
-        default: false
+        default: true
     }),
     heuristicValue: heuristic = Setting.list({
         name: "Heuristic",
@@ -1208,6 +1724,10 @@ MatrixTeleportHitValues = {
         min: 1,
         max: 5,
         default: 3
+    }),
+    retreatValue: retreat = Setting.boolean({
+        name: "Retreat",
+        default: true
     }),
     onGroundValue: onGround = Setting.boolean({
         name: "OnGround",
@@ -1227,6 +1747,10 @@ MatrixTeleportHitValues = {
     packetEventValue: packetEvent = Setting.boolean({
         name: "PacketEvent",
         default: false
+    }),
+    rotationValue: rotation = Setting.boolean({
+        name: "Rotation",
+        default: true
     }),
     renderTargetHUDValue: renderTargetHUD = Setting.boolean({
         name: "TargetHUD",
@@ -1269,9 +1793,7 @@ MatrixTeleportHitValues = {
 //implementation of https://en.wikipedia.org/wiki/Slab_method; https://tavianator.com/2022/ray_box_boundary.html#:~:text=Geometry%20The%20slab%20method%20tests%20for%20an,any.%20t=%20x%20d%20x%E2%88%92%20x%200.
 
 function rayTrace(range) {
-    var dirVec = mc.thePlayer.getLookVec()
-    var originVec = mc.thePlayer.getPositionEyes(1)
-    var intersected = []
+    var dirVec = mc.thePlayer.getLookVec(), originVec = mc.thePlayer.getPositionEyes(1), intersected = []
 
     var entityList = mc.theWorld.loadedEntityList
 
@@ -1301,7 +1823,7 @@ function rayTrace(range) {
 
         if (tExit > 0 && tEntry <= tExit && tEntry <= range) intersected.push(entity);
     }
-    return intersected.length ? intersected.sort(function (a, b) PlayerExtensionKt.getDistanceToEntityBox(a, mc.thePlayer) - PlayerExtensionKt.getDistanceToEntityBox(b, mc.thePlayer))[0] : null
+    return intersected.sort(function (a, b) PlayerExtensionKt.getDistanceToEntityBox(a, mc.thePlayer) - PlayerExtensionKt.getDistanceToEntityBox(b, mc.thePlayer))[0]
 }
 
 //an implementation of https://de.wikipedia.org/wiki/A*-Algorithmus
@@ -1309,12 +1831,6 @@ function rayTrace(range) {
 //similar to https://github.com/CCBlueX/LiquidBounce/blob/nextgen/src/main/kotlin/net/ccbluex/liquidbounce/utils/block/AStarPathBuilder.kt one may check if a whole chunk is empty
 //if so, dont expand every node, instead skip the chunk by expanding only a few nodes
 //additionally, using arrays instead of a proper data structure is also inefficient
-
-function getDist(blockPosA, blockPosB) {
-    var a = new Vec3(blockPosA.getX() + 0.5, blockPosA.getY() + 0.5, blockPosA.getZ() + 0.5)
-    var b = new Vec3(blockPosB.getX() + 0.5, blockPosB.getY() + 0.5, blockPosB.getZ() + 0.5)
-    return a.distanceTo(b)
-}
 
 function isPassable(blockPos) {
     var state = mc.theWorld.getBlockState(blockPos)
@@ -1332,6 +1848,16 @@ function isSurrounded(blockPos) {
         if (isPassable(pos)) return false
     }
     return true;
+}
+
+function getAnySurroungingPos(blockPos) {
+    if (isSurrounded(blockPos)) return null;
+    var offsets = [[0, -1, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1], [1, 1, 0], [0, 1, 1], [-1, 1, 0], [0, 1, -1], [0, 2, 0]]
+    for (var i = 0; i < offsets.length; i++) {
+        var pos = new BlockPos(blockPos.getX() + offsets[i][0], blockPos.getY() + offsets[i][1], blockPos.getZ() + offsets[i][2])
+        if (isPassable(pos)) return pos
+    }
+    return null;
 }
 
 Node = function(pos, parent, gCost, hCost, tCost) {
@@ -1353,15 +1879,9 @@ PathAlgorithm = function() {
     this.sqrt2 = Math.sqrt(2)
     this.sqrt3 = Math.sqrt(3)
 
-    this.set = function(startPos, endPos) {
-        this.startPos = startPos
+    this.set = function(endPos) {
+        this.startPos = new BlockPos(mc.thePlayer)
         this.endPos = endPos
-
-        this.startNode = null
-        this.endNode = null
-        this.openList = []
-        this.closeList = []
-        this.path = []
 
         this.startNode = new Node(this.startPos)
         this.endNode = new Node(this.endPos)
@@ -1377,6 +1897,7 @@ PathAlgorithm = function() {
         for (var i = 0; i < offsets.length; i++) {
             var off = offsets[i]
             var blockPos = new BlockPos(node.pos.getX() + off[0], node.pos.getY() + off[1], node.pos.getZ() + off[2])
+
             if (!isPassable(blockPos)) continue;
 
             var expandedNode = new Node(blockPos, node)
@@ -1392,7 +1913,7 @@ PathAlgorithm = function() {
 
             expandedNode.parent = node
             expandedNode.gCost = tentG
-            expandedNode.hCost = heuristic == "Euclidean" ? getDist(blockPos, this.endPos) : (function(a, b) { //euclidean is really not suited for this. Approximation is enough
+            expandedNode.hCost = heuristic == "Euclidean" ? getDist(blockPos, this.endPos) : (function(a, b) {
                 return Math.abs(a.getX() - b.getX()) + Math.abs(a.getY() - b.getY()) + Math.abs(a.getZ() - b.getZ())
             })(blockPos, this.endPos)
             expandedNode.tCost = expandedNode.gCost + expandedNode.hCost
@@ -1417,7 +1938,15 @@ PathAlgorithm = function() {
     }
 
     this.compute = function (loops, heuristic, diagonal) {
-        if (!isPassable(this.endPos) || isSurrounded(this.endPos) || isSurrounded(this.startPos)) return null
+        if (!isPassable(this.endPos)) {
+            var alternativePos = getAnySurroungingPos(this.endPos)
+            if (!alternativePos) return this.path
+
+            this.set(alternativePos);
+        }
+
+        if (isSurrounded(this.startPos) || isSurrounded(this.endPos)) return this.path
+
         while (loops-- > 0 && this.openList.length) {
             var currentNode = this.getCheapestNode()
 
@@ -1434,11 +1963,11 @@ PathAlgorithm = function() {
 
             this.expandNode(currentNode, heuristic, diagonal)
         }
-        return null;
+        return this.path
     }
 }
 
-var pathAlgorithm = new PathAlgorithm(), path = [], packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer();
+var pathAlgorithm = new PathAlgorithm(), path = [], packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null;
 
 script.registerModule({
     name: "MatrixTeleportHit",
@@ -1449,29 +1978,40 @@ script.registerModule({
     module.on("update", function () {
         module.tag = range.get()
         targetEntity = rayTrace(range.get())
+
+        if (targetEntity && PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer) < 10) return;
+
         if (mc.gameSettings.keyBindAttack.pressed && tpHitTimer.hasTimePassed(200)) {
-            if (PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer) < 10) return;
             packetPositions = []
 
             if (targetEntity) {
-                pathAlgorithm.set(new BlockPos(mc.thePlayer), new BlockPos(targetEntity))
+                pathAlgorithm.set(new BlockPos(targetEntity))
                 path = pathAlgorithm.compute(loops.get(), heuristic.get(), diagonalSearch.get())
 
-                if (path) {
+                if (path.length) {
                     if (startJump.get() && mc.thePlayer.onGround) mc.thePlayer.motionY = startJumpMotion.get();
-                    for (var i = 0; i < path.length - packetIntervall.get(); i += packetIntervall.get()) {
+
+                    for (var i = 0; i <= path.length - packetIntervall.get(); i += packetIntervall.get()) {
                         var pos = path[i]
                         packetPositions.push(pos)
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pos.getX(), pos.getY(), pos.getZ(), onGround.get()), packetEvent.get())
                     }
-                    if (path.length % packetIntervall.get() != 0) {
+
+                    if (path.length % packetIntervall.get() != 0) { //this might prevent range flags if packet intervall is > 3 && packetPositions\this.endPos
                         packetPositions.push(pathAlgorithm.endPos)
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pathAlgorithm.endPos.getX(), pathAlgorithm.endPos.getY(), pathAlgorithm.endPos.getZ(), onGround.get()), packetEvent.get());
                     }
+
+                    if (rotation.get()) {
+                        var rot = RotationUtils.faceTrajectory(targetEntity, false, 0.0, 0.0, 0.0);
+                        rot && RotationUtils.setTargetRotation(rot, new RotationSettings(ModuleManager.getModule("KillAura"), function () true), 1)
+                    }
                     mc.playerController.attackEntity(mc.thePlayer, targetEntity)
+
+                    if (retreat.get()) PacketUtils.sendPacket(new C04PacketPlayerPosition(pathAlgorithm.startPos.getX(), pathAlgorithm.startPos.getY(), pathAlgorithm.startPos.getZ(), onGround.get()), packetEvent.get())
                 }
             }
-            tpHitTimer.reset(), targetEntity = null;
+            tpHitTimer.reset()
         }
         if (tpHitTimer.hasTimePassed(visibleTime.get())) packetPositions = [];
     })
@@ -1483,19 +2023,19 @@ script.registerModule({
         }
     })
     module.on("render2D", function () {
+        if (oldTarget != targetEntity) {
+            ds = 0;
+            oldTarget = targetEntity
+        }
+
+        var screenWidth = new ScaledResolution(mc).getScaledWidth(), screenHeight = new ScaledResolution(mc).getScaledHeight();
+
         if (renderTargetHUD.get() && targetEntity) {
+            ds = animate(40, ds, 0.25)
+            GuiInventory.drawEntityOnScreen(screenWidth / 2 - 30, screenHeight / 2 + 45, ds, 0, 0, targetEntity)
+
             var dist = PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer)
-            Gui.drawRect(470, 280, 340, 335, new Color(20, 20, 20).getRGB());
-            Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
-            mcFont.drawString(targetEntity.getName(), 346, 287, 0xFFFFFF);
-
-            Gui.drawRect(430, 301, 343, 332, new Color(50, 50, 50).getRGB());
-            mcFont.drawString(dist.toFixed(2) + " m", 346, 306, dist < 10 ? 0xFF0000 : 0xFFFFFF);
-            mcFont.drawString("distance", 346, 320, 0xFFFFFF);
-
-            Gui.drawRect(433, 301, 467, 332, new Color(50, 50, 50).getRGB());
-            GL11.glColor4f(255, 255, 255, 1)
-            GuiInventory.drawEntityOnScreen(450, 330, 13, 0, 0, targetEntity)
+            mcFont.drawString(dist.toFixed(2) + " m", screenWidth / 2 - 47, screenHeight / 2 + 50, dist < 10 ? 0xFF0000 : 0xFFFFFF)
         }
     })
     module.on("disable", function () {
