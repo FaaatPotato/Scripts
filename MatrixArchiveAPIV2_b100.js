@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.0",
+    version: "1.0.1",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -15,7 +15,7 @@ A few words to clarify...
   - Enjoy!
 */
 
-//To do: add FlyModes: flag longjump by shurpe, blink longjump (+max packets value), janitor work
+//To do: add FlyModes: flag longjump by shurpe, blink longjump (+max packets value), a lot of janitor work
 
 /*------------------*/
 /*      IMPORTS     */
@@ -102,9 +102,10 @@ EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
 EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
 Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
 Class = java.lang.Class;
+ValueClass = Java.type("net.ccbluex.liquidbounce.config.Value").INSTANCE;
 
 /*------------------*/
-/*  PROPERTY FUNCS  */
+/* GLOBAL FUNCTIONS */
 /*------------------*/
 
 //time to mention Core.lib (the goat); I bow before this piece of code and want to highlight @CzechHek who made this library
@@ -170,73 +171,33 @@ function getMethod(clazz, name, argumentArr, _method)
 
 function getArguments(argumentsObj, from, to) Array.prototype.slice.call(argumentsObj, from, to);
 
-function Reflector(object) {
-    var RemapperFields = getField(Remapper, "fields").get(Remapper), RemapperMethods = getField(Remapper, "methods").get(Remapper);
-    object && object instanceof java.lang.Object ?
+var RemapperMethods = getField(Remapper, "methods").get(Remapper), RemapperFields = getField(Remapper, "fields").get(Remapper);
+
+function Reflector(object) object && object instanceof java.lang.Object ?
     new JSAdapter() {
-        __get__: function (name) {
-            var field = getField(object, getSRGName(object, name, RemapperFields));
-            if (field) return new Reflector(field.get(object));
+    __get__: function (name) {
+        var field = getField(object, getSRGName(object, name, RemapperFields));
+        if (field) return new Reflector(field.get(object));
 
-            var method = getMethod(object, getSRGName(object, name, remapperMethods));
-            if (method) return method;
+        var method = getMethod(object, getSRGName(object, name, RemapperMethods));
+        if (method) return method;
 
-            return object[name];
-        },
-        __put__: function (name, value) {
-            var field = getField(object, getSRGName(object, name, RemapperFields));
-            field ? field.set(object, value) : object[name] = value;
-        },
-        __call__: function (name) {
-            switch (name) {
-                case "toString": return object + ""//.toString() doesn't work for java beans
-                case "valueOf": return object;
-                default:
-                    args = getArguments(arguments, 1);
-                    return getMethod(object, getSRGName(object, name, Core.remapperMethods), args).invoke(object, Java.to(args, "java.lang.Object[]"));
-            }
+        return object[name];
+    },
+    __put__: function (name, value) {
+        var field = getField(object, getSRGName(object, name, RemapperFields));
+        field ? field.set(object, value) : object[name] = value;
+    },
+    __call__: function (name) {
+        switch (name) {
+            case "toString": return object + ""//.toString() doesn't work for java beans
+            case "valueOf": return object;
+            default:
+                args = getArguments(arguments, 1);
+                return getMethod(object, getSRGName(object, name, RemapperMethods), args).invoke(object, Java.to(args, "java.lang.Object[]"));
         }
-    } : object;
-}
-
-/*------------------*/
-/* GLOBAL VARIABLES */
-/*------------------*/
-
-var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", "a", "2", "e", "6", "c", "4"].random() + "§lMatrixArchive§8§l]§7 ",
-    lastKillMessage = [], selectingPhrase = false,
-    internalInsults = [
-        "lmao",
-        "your performance was miserable :)",
-        "idk bro not your best day huh",
-        "I personally would just surrender.",
-        "absolute beginner ffs",
-        "this game is not made for you...",
-        "people as bad as you should not play this game.",
-        "listen, go to bed. I already sent you to sleep.",
-        "buddy, try harder next time ig.",
-        "seems like you lost. Must have happened before. Maybe quit?",
-        "let me give you a little.. life lesson. Life fucks you like I did.",
-        "you should've prayed. Not to survive me but to die against someone else.",
-        "still can't do nothing against cheats",
-        "you got absolutely beat up my g. Must be fun playing legit :)",
-        "no words for such miserable performance",
-        "you couldn't look more foolish",
-        "get clowned",
-        ":skull:"
-    ], sentInsult = false, sentLink = false, lastTarget, queueTimer = new MSTimer(), sendQueue = [],
-    breakDamage = 0, blockHitDelay = 0, breakingBlock, lastPlaced = null, totalFallDist = 0, cancelC04 = false,
-    boosted = false, tryBoost = 0, simulateStartY, mcFont = Fonts.getFonts()[0], wasRiding = false,
-    lastQueueTarget = null, clientChatContent = "", cIndex = null, glideMotionTicks = 0, glideTicks = 0, isBlock = false,
-    selectTimer = new MSTimer(), renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
-    destinationPos = null, sentPackets = 0, lookingAt = null, isMoving = false,
-    formattedInsult = "", replacedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
-    mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
-    tpWait = false, lastRiddenEntity = null, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false;
-
-/*------------------*/
-/* GLOBAL FUNCTIONS */
-/*------------------*/
+    }
+} : object;
 
 function timeout(ms, func, _timer) (_timer = new Timer("setTimeout", true), _timer.schedule(func, ms), _timer);
 
@@ -281,8 +242,6 @@ function getBlock(blockPos) mc.theWorld.getBlockState(blockPos).getBlock();
 
 function getBlockName(blockPos) getBlock(blockPos).getLocalizedName();
 
-function getFacing(state) state.getProperties().get(BlockDirectional.FACING);
-
 function getBlockState(blockOrPos) blockOrPos instanceof BlockPos ? mc.theWorld.getBlockState(blockOrPos) : blockOrPos.getBlockState();
 
 function getTargetsInRange(range, entityType) Java.from(mc.theWorld.loadedEntityList).filter(function (e) e != mc.thePlayer && ((entityType ? e instanceof entityType : EntityUtils.isSelected(e, true)) && (!range || PlayerExtensionKt.getDistanceToEntityBox(e, mc.thePlayer) <= range)));
@@ -299,11 +258,49 @@ function animate(target, current, speed) {
     return current;
 }
 
-function getDist(blockPosA, blockPosB) { //instead use getCenterDistance
+function getDist(blockPosA, blockPosB) {
     var a = new Vec3(blockPosA.getX() + 0.5, blockPosA.getY() + 0.5, blockPosA.getZ() + 0.5)
     var b = new Vec3(blockPosB.getX() + 0.5, blockPosB.getY() + 0.5, blockPosB.getZ() + 0.5)
     return a.distanceTo(b)
 }
+
+/*------------------*/
+/* GLOBAL VARIABLES */
+/*------------------*/
+
+var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", "a", "2", "e", "6", "c", "4"].random() + "§lMatrixArchive§8§l]§7 ",
+    lastKillMessage = [], selectingPhrase = false,
+    internalInsults = [
+        "lmao",
+        "your performance was miserable :)",
+        "idk bro not your best day huh",
+        "I personally would just surrender.",
+        "absolute beginner ffs",
+        "this game is not made for you...",
+        "people as bad as you should not play this game.",
+        "listen, go to bed. I already sent you to sleep.",
+        "buddy, try harder next time ig.",
+        "seems like you lost. Must have happened before. Maybe quit?",
+        "let me give you a little.. life lesson. Life fucks you like I did.",
+        "you should've prayed. Not to survive me but to die against someone else.",
+        "still can't do nothing against cheats",
+        "you got absolutely beat up my g. Must be fun playing legit :)",
+        "no words for such miserable performance",
+        "you couldn't look more foolish",
+        "get clowned",
+        ":skull:"
+    ], sentInsult = false, sentLink = false, lastTarget, queueTimer = new MSTimer(), sendQueue = [],
+    breakDamage = 0, blockHitDelay = 0, breakingBlock, lastPlaced = null, totalFallDist = 0, cancelC04 = false,
+    boosted = false, tryBoost = 0, simulateStartY, mcFont = Fonts.getFonts()[0], wasRiding = false,
+    lastQueueTarget = null, clientChatContent = "", cIndex = null, glideMotionTicks = 0, glideTicks = 0, isBlock = false,
+    selectTimer = new MSTimer(), renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
+    destinationPos = null, sentPackets = 0, lookingAt = null, isMoving = false,
+    formattedInsult = "", replacedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
+    mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
+    tpWait = false, lastRiddenEntity = null, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false, path = [],
+    packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null, potKillMessages = [],
+    invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = [];
+
 
 /*------------------*/
 /*    SETTING-UP    */
@@ -361,7 +358,7 @@ AutoInsultValues = {
                     selectingPhrase = false;
                     addMessage(prefix+"No message to select target from.")
                     addMessage(prefix+"Default position will be used.")
-                    customIndex.set(false)
+                    timeout(1, (function() setValue(customIndex, false)))
                 }
             } else if (lastKillMessage.length) {
                 addMessage(prefix+"Default position will be used.")
@@ -369,6 +366,32 @@ AutoInsultValues = {
             }
         },
         isSupported: function () detectionMode.get() == "PacketChat" && header1.get()
+    }),
+    displayPotKillMessagesValue: displayPotKillMessages = Setting.boolean({
+        name: "DisplayPotentialKillMessages",
+        default: false,
+        onChange: function (o, n) {
+            if (n) {
+                if (potKillMessages.length) {
+                    for each(var arr in potKillMessages) {
+                        var potKillMessage = arr.join(" ")
+                        var comp = new ChatComponentText(prefix + potKillMessage)
+                        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, potKillMessage))
+                        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to inspect kill message.")))
+                        mc.thePlayer.addChatMessage(comp)
+                    }
+                    invPotKillMessage = true;
+                } else {
+                    addMessage(prefix + "No potential messages detected!")
+                    timeout(1, (function() setValue(displayPotKillMessages, false)))
+                }
+            }
+            if (n == false && potKillMessages.length) {
+                clearChat()
+                invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = []
+            }
+        },
+        isSupported: function() header1.get()
     }),
     spacerValue2: spacer2 = Setting.boolean({
         name: "",
@@ -393,6 +416,7 @@ AutoInsultValues = {
             if (n && n == "REFRESH") {
                 var content = Java.from(insultDir.listFiles()).map(function (file) file.getName()).filter(function (name) name != "customLetters.txt").concat("", "REFRESH")
                 valueCustomFileReflector.values = Java.to(content, "java.lang.String[]")
+                timeout(1, (function() setValue(customFile, customF[0])))
             }
         },
         isSupported: function () header2.get() && insultMode.get() == "Custom"
@@ -408,7 +432,7 @@ AutoInsultValues = {
                     addMessage(prefix + fileContent[i])
                 }
                 addMessage("")
-                printFile.set(false)
+                timeout(1, (function () setValue(printFile, false)));
             }
         },
         isSupported: function () header2.get() && insultMode.get() == "Custom"
@@ -467,6 +491,7 @@ AutoInsultValues = {
             if (n && n == "REFRESH") {
                 var content = Java.from(FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)).filter(function (e) e.length == 26).concat("", "REFRESH")
                 valueCustomLettersReflector.values = Java.to(content, "java.lang.String[]")
+                timeout(1, (function() setValue(customLetters, customA[0])))
             }
         },
         isSupported: function() header3.get() && useCustomLetters.get()
@@ -507,6 +532,27 @@ AutoInsultValues = {
 
 var valueCustomFileReflector = new Reflector(customFile), valueCustomLettersReflector = new Reflector(customLetters);
 
+function setValue(valueInstance, newValue) { //because value.set doesnt work lmao
+    if (valueInstance.get() === newValue) {
+        return;
+    }
+    var methods = valueInstance.getClass().getMethods();
+    for (var i = 0; i < methods.length; i++) {
+        var method = methods[i];
+        if (method.getName() === "set") {
+            try {
+                method.setAccessible(true);
+                if (method.getParameterCount() === 2) {
+                    method.invoke(valueInstance, newValue, false);
+                    return;
+                }
+            } catch (e) {
+                continue;
+            }
+        }
+    }
+}
+
 function containsLink(message) message.contains("http://") || message.contains("www.") || message.contains("https://");
 
 function extractLinks(message) message.split(" ").filter(function (part) containsLink(part));
@@ -528,7 +574,7 @@ function shouldReplaceLetter(atI, message) {
 }
 
 function sendInsult(targetName) {
-    userContent = Java.from(insultDir.listFiles()).length && Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)).length && customFile.get() ? Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) : null
+    userContent = Java.from(insultDir.listFiles()).length && customFile.get() ? Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) : null
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
     lastTarget = targetName
 
@@ -562,8 +608,7 @@ function sendInsult(targetName) {
             } else replacedInsult += formattedInsult[i];
         }
     }
-    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult)) //sometimes
-    //formattedInsult = "", replacedInsult = ""; why clear it if it gets updated anyways
+    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult))
 }
 
 function isCensoredByServer(serverContent) { //to handle the case message has been sent but got censored; may false positive but extremely rare
@@ -596,13 +641,13 @@ script.registerModule({
     category: "Fun",
     description: "Highly customizable AutoInsult with alternative kill detection",
     settings: AutoInsultValues,
- }, function (module) {
-    module.on("packet", function(e) {
+}, function (module) {
+    module.on("packet", function (e) {
         var packet = e.getPacket()
 
         if (packet instanceof C01PacketChatMessage) {
             clientChatContent = packet.getMessage()
-            if (selectingPhrase && lastKillMessage.indexOf(clientChatContent) != -1) {
+            if (selectingPhrase && lastKillMessage.includes(clientChatContent)) {
                 cIndex = lastKillMessage.indexOf(clientChatContent)
                 e.cancelEvent()
 
@@ -611,13 +656,97 @@ script.registerModule({
                 addMessage(prefix + "AutoInsultReloaded will search at the selected position for a target name.")
                 selectingPhrase = false;
             }
+            if (invPotKillMessage && (function() {
+                for (var i = 0; i < potKillMessages.length; i++) {
+                    var km = potKillMessages[i]
+                    if (clientChatContent.contains(km.join(" "))) {
+                        killMessage = km
+                        return true;
+                    }
+                }
+                return false
+                })()) {
+                e.cancelEvent()
+                clearChat()
+
+                var comp = new ChatComponentText(prefix + killMessage.join(" "))
+                comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, killMessage.join(" ")))
+                comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick build detection phrase.")))
+                mc.thePlayer.addChatMessage(comp)
+                invPotKillMessage = false;
+
+                buildingDetectionPhrase = true, builtDetectionPhrase = [];
+            }
+            if (buildingDetectionPhrase) {
+                if (clientChatContent.contains(killMessage.join(" "))) {
+                    e.cancelEvent()
+
+                    clearChat()
+
+                    for each(var part in killMessage) {
+                        var comp = new ChatComponentText(prefix + part)
+                        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, part))
+                        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick select as part of detection phrase.")))
+                        mc.thePlayer.addChatMessage(comp)
+                    }
+                    addMessage(prefix)
+                    var fcomp = new ChatComponentText(prefix + "§a§l[finish selection]")
+                    fcomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-f building detection phrase"))
+                    fcomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finish building detection phrase.")))
+                    mc.thePlayer.addChatMessage(fcomp)
+                    var ccomp = new ChatComponentText(prefix + "§c§l[cancel selection]")
+                    ccomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-c building detection phrase"))
+                    ccomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§cClick to cancel building detection phrase.")))
+                    mc.thePlayer.addChatMessage(ccomp)
+                    addMessage(prefix)
+                }
+                if (killMessage.includes(clientChatContent)) {
+                    e.cancelEvent()
+
+                    builtDetectionPhrase.push(clientChatContent)
+                    addMessage(prefix + "§a§lAdded: §7" + clientChatContent)
+                }
+                if (clientChatContent.contains("-f building detection phrase")) {
+                    e.cancelEvent()
+                    clearChat()
+
+                    setValue(detectionPhrase, builtDetectionPhrase.join(" "))
+
+                    addMessage(prefix + "Detection phrase set to §a§l" + builtDetectionPhrase.join(" "))
+
+                    builtDetectionPhrase = []
+                    buildingDetectionPhrase = false;
+                    setValue(displayPotKillMessages, false)
+                }
+                if (clientChatContent.contains("-c building detection phrase")) {
+                    e.cancelEvent()
+                    clearChat()
+
+                    builtDetectionPhrase = []
+                    buildingDetectionPhrase = false;
+
+                    addMessage(prefix + "§c§lCanceled!")
+
+                    setValue(displayPotKillMessages, false)
+                }
+            }
         }
         if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat") {
+
             var serverChatContent = packet.getChatComponent().getUnformattedText()
             var serverContentArray = serverChatContent.split(" ")
             var target = customIndex.get() ? serverContentArray[cIndex] : serverContentArray[0]
 
             var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
+
+            if (serverChatContent.contains(mc.thePlayer.getName()) && Java.from(mc.getNetHandler().getPlayerInfoMap())
+                .map(function(info) info = info.getGameProfile().getName())
+                .filter(function(name) name != mc.thePlayer.getName())
+                .some(function (n) serverChatContent.contains(n))) {
+                    potKillMessages.push(serverContentArray)
+            }
+
+            if (selectingPhrase || buildingDetectionPhrase || invPotKillMessage) return e.cancelEvent();
 
             if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
                 sendInsult(target)
@@ -646,6 +775,7 @@ script.registerModule({
     });
     module.on("update", function () {
         module.tag = detectionMode.get()
+
         if (sendQueue.length && queueTimer.hasTimePassed(sendDelay.get() * 1000)) {
             lastQueueTarget = sendPriority.get() == "QUEUE" ? sendQueue.shift() : sendQueue.pop();
             sendInsult(lastQueueTarget)
@@ -660,7 +790,9 @@ script.registerModule({
     });
     module.on("world", function () {
         sendQueue = []
+        potKillMessages = []
         currentTarget = null;
+        setValue(displayPotKillMessages, false)
     })
 });
 
@@ -705,6 +837,8 @@ function getClosestBedPos(radius) {
     }
     return nearestBedPos
 }
+
+function getFacing(state) state.getProperties().get(BlockDirectional.FACING);
 
 function getBlockToBreak(bedPos, range) {
     var state = getBlockState(bedPos), facing = getFacing(state);
@@ -1130,6 +1264,7 @@ script.registerModule({
     });
     module.on("packet", function (e) {
         var packet = e.getPacket()
+
         if (flyMode.get() == "CancelC04") {
             if (packet instanceof C04PacketPlayerPosition && cancelC04) e.cancelEvent();
         }
@@ -1150,7 +1285,7 @@ script.registerModule({
     });
     module.on("render2D", function () {
         if (!renderAirTime.get() || flyMode.get() != "CancelC04" || cancelMode.get() != "Normal" || !canRecieveFallDMG() || mc.thePlayer.onGround) return;
-        
+
         var percentage = getRelativeFallDMG() * 100,
             renderDMG = getRelativeFallDMG() < 1 ? getRelativeFallDMG() : 1
 
@@ -1191,12 +1326,12 @@ MatrixClickTPValues = {
     }),
     clickTpModeValue: clickTpMode = Setting.list({
         name: "Mode",
-        values: ["PacketSpam", "BoatCycleDesync"],
-        default: "BoatCycleDesync"
+        values: ["PacketSpam", "OverwriteLastC04"],
+        default: "OverwriteLastC04"
     }),
     maxPacketsValue: maxPackets = Setting.integer({
         name: "MaxPackets",
-        min: 10,
+        min: 20,
         max: 1000,
         default: 20
     }),
@@ -1212,14 +1347,7 @@ MatrixClickTPValues = {
         min: 1,
         max: 5,
         default: 2,
-        isSupported: function() clickTpMode.get() == "BoatCycleDesync"
-    }),
-    finalTpPacketDelayValue: finalTpPacketDelay = Setting.float({
-        name: "FinalTpPacketDelay[s]",
-        min: 0.5,
-        max: 5,
-        default: 1,
-        isSupported: function() clickTpMode.get() == "BoatDesyncInstant"
+        isSupported: function() clickTpMode.get() == "OverwriteLastC04"
     }),
     tpTimerValue: tpTimer = Setting.float({
         name: "TimerSpeed",
@@ -1233,8 +1361,6 @@ MatrixClickTPValues = {
     })
 }
 
-var valueMaxPacketsReflector = new Reflector(maxPackets)
-
 function isButtonPressed() {
     switch (mouseButton.get()) {
         case "left": return mc.gameSettings.keyBindAttack.pressed; break;
@@ -1245,7 +1371,7 @@ function isButtonPressed() {
 }
 
 function hasArrived() {
-    return mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ() || getDist(destinationPos, new BlockPos(mc.thePlayer)) <= 3 && !ModuleManager.getModule("FreeCam").getState()
+    return (mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ() || getDist(destinationPos, new BlockPos(mc.thePlayer)) <= 3) && !ModuleManager.getModule("FreeCam").getState()
 }
 
 function drawDestinationBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //GuiInventory.drawEntityOnScreen() only takes instanceof EntityLiving; this is a bit cheap ngl, but easy
@@ -1404,13 +1530,13 @@ script.registerModule({
                 addMessage(prefix + "Teleport failed!")
                 addMessage(prefix + "Sent §c§l" + sentPackets + " §7packets")
                 MatrixTeleportModule.setState(false)
-            } else if (clickTpMode.get() == "BoatCycleDesync") {
+            } else if (clickTpMode.get() == "OverwriteLastC04") {
                 tpWait = true
                 finalPackets += sentPackets
                 sentPackets = 0;
                 tpWaitTimer.reset()
             }
-        } else if (!hasArrived() && clickTpMode.get() == "BoatCycleDesync" && !mc.thePlayer.isRiding()) MatrixTeleportModule.setState(false), addMessage(""), addMessage(prefix + "§c§lCanceled Teleport!"), addMessage(prefix + "Dismounted too early!"), addMessage("");
+        } else if (!hasArrived() && clickTpMode.get() == "OverwriteLastC04" && !mc.thePlayer.isRiding()) MatrixTeleportModule.setState(false), addMessage(""), addMessage(prefix + "§c§lCanceled Teleport!"), addMessage(prefix + "Dismounted too early!"), addMessage("");
 
         ModuleManager.getModule("FreeCam").setState(false)
 
@@ -1425,7 +1551,7 @@ script.registerModule({
 
         if (mc.thePlayer.isRiding() && destinationPos && clickTpMode.get() != "PacketSpam") { //this way because i want to add another boat mode
             if (packet instanceof S08PacketPlayerPosLook) {
-                if (clickTpMode.get() == "BoatCycleDesync") !tpWait && handleAction("desync", e);
+                if (clickTpMode.get() == "OverwriteLastC04") !tpWait && handleAction("desync", e);
             }
         }
     })
@@ -1687,8 +1813,8 @@ script.registerModule({
             && (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) &&
             PlayerExtensionKt.getDistanceToEntityBox(target, mc.thePlayer) <= killAuraRangeValue &&
             entityIsMoving(mc.thePlayer)) {
-            MovementUtils.strafe(combatStrafeSpeed.get());
-            if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
+                MovementUtils.strafe(combatStrafeSpeed.get());
+                if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
         }
     })
     module.on("render3D", function () {
@@ -1801,7 +1927,7 @@ function rayTrace(range) {
         var entity = entityList[i]
         if (!EntityUtils.isSelected(entity, true)) continue;
 
-        var bb = entity.getEntityBoundingBox().expand(0.1, 0.1, 0.1)
+        var bb = entity.getEntityBoundingBox().expand(0.1, 0.1, 0.1) //make it hittable
 
         var tx1 = (bb.minX - originVec.xCoord) / dirVec.xCoord
         var tx2 = (bb.maxX - originVec.xCoord) / dirVec.xCoord
@@ -1938,14 +2064,13 @@ PathAlgorithm = function() {
     }
 
     this.compute = function (loops, heuristic, diagonal) {
+        if (isSurrounded(this.startPos) || isSurrounded(this.endPos)) return this.path
+
         if (!isPassable(this.endPos)) {
             var alternativePos = getAnySurroungingPos(this.endPos)
             if (!alternativePos) return this.path
-
             this.set(alternativePos);
         }
-
-        if (isSurrounded(this.startPos) || isSurrounded(this.endPos)) return this.path
 
         while (loops-- > 0 && this.openList.length) {
             var currentNode = this.getCheapestNode()
@@ -1967,7 +2092,7 @@ PathAlgorithm = function() {
     }
 }
 
-var pathAlgorithm = new PathAlgorithm(), path = [], packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null;
+var pathAlgorithm = new PathAlgorithm();
 
 script.registerModule({
     name: "MatrixTeleportHit",
@@ -1997,7 +2122,7 @@ script.registerModule({
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pos.getX(), pos.getY(), pos.getZ(), onGround.get()), packetEvent.get())
                     }
 
-                    if (path.length % packetIntervall.get() != 0) { //this might prevent range flags if packet intervall is > 3 && packetPositions\this.endPos
+                    if (path.length % packetIntervall.get() != 0) { //this might prevent range flags if packet intervall is > 3 && {packetPositions}\this.endPos
                         packetPositions.push(pathAlgorithm.endPos)
                         PacketUtils.sendPacket(new C04PacketPlayerPosition(pathAlgorithm.endPos.getX(), pathAlgorithm.endPos.getY(), pathAlgorithm.endPos.getZ(), onGround.get()), packetEvent.get());
                     }
