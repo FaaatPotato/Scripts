@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.1",
+    version: "1.0.2",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -43,6 +43,7 @@ C0CPacketInput = Java.type("net.minecraft.network.play.client.C0CPacketInput")
 S41PacketServerDifficulty = Java.type("net.minecraft.network.play.server.S41PacketServerDifficulty")
 S38PacketPlayerListItem = Java.type("net.minecraft.network.play.server.S38PacketPlayerListItem")
 S3CPacketUpdateScore = Java.type("net.minecraft.network.play.server.S3CPacketUpdateScore")
+S00PacketDisconnect = Java.type("net.minecraft.network.login.server.S00PacketDisconnect")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
 EntityTNTPrimed = Java.type("net.minecraft.entity.item.EntityTNTPrimed")
 Entity = Java.type("net.minecraft.entity.Entity")
@@ -102,7 +103,6 @@ EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
 EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
 Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
 Class = java.lang.Class;
-ValueClass = Java.type("net.ccbluex.liquidbounce.config.Value").INSTANCE;
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
@@ -337,6 +337,11 @@ AutoInsultValues = {
         },
         isSupported: function () detectionMode.get() == "PacketChat" && header1.get()
     }),
+    smartTargetIndexValue: smartTargetIndex = Setting.boolean({
+        name: "SmartTargetIndex",
+        default: true,
+        isSupported: function () header1.get() && detectionMode.get() == "PacketChat" && !customIndex.get()
+    }),
     customIndexValue: customIndex = Setting.boolean({
         name: "CustomTargetNameIndex",
         default: false,
@@ -365,7 +370,7 @@ AutoInsultValues = {
                 selectingPhrase = false
             }
         },
-        isSupported: function () detectionMode.get() == "PacketChat" && header1.get()
+        isSupported: function () detectionMode.get() == "PacketChat" && header1.get() && !smartTargetIndex.get()
     }),
     displayPotKillMessagesValue: displayPotKillMessages = Setting.boolean({
         name: "DisplayPotentialKillMessages",
@@ -391,7 +396,7 @@ AutoInsultValues = {
                 invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = []
             }
         },
-        isSupported: function() header1.get()
+        isSupported: function() header1.get() && detectionMode.get() == "PacketChat"
     }),
     spacerValue2: spacer2 = Setting.boolean({
         name: "",
@@ -532,7 +537,7 @@ AutoInsultValues = {
 
 var valueCustomFileReflector = new Reflector(customFile), valueCustomLettersReflector = new Reflector(customLetters);
 
-function setValue(valueInstance, newValue) { //because value.set doesnt work lmao
+function setValue(valueInstance, newValue) { //because value.set doesnt work lmao; rework ts
     if (valueInstance.get() === newValue) {
         return;
     }
@@ -644,9 +649,9 @@ script.registerModule({
 }, function (module) {
     module.on("packet", function (e) {
         var packet = e.getPacket()
-
         if (packet instanceof C01PacketChatMessage) {
             clientChatContent = packet.getMessage()
+
             if (selectingPhrase && lastKillMessage.includes(clientChatContent)) {
                 cIndex = lastKillMessage.indexOf(clientChatContent)
                 e.cancelEvent()
@@ -656,16 +661,12 @@ script.registerModule({
                 addMessage(prefix + "AutoInsultReloaded will search at the selected position for a target name.")
                 selectingPhrase = false;
             }
-            if (invPotKillMessage && (function() {
-                for (var i = 0; i < potKillMessages.length; i++) {
-                    var km = potKillMessages[i]
-                    if (clientChatContent.contains(km.join(" "))) {
-                        killMessage = km
-                        return true;
-                    }
+            if (invPotKillMessage && potKillMessage.some(function (km) {
+                if (clientChatContent.contains(km.join(" "))) {
+                    killMessage = km
+                    return true;
                 }
-                return false
-                })()) {
+            })) {
                 e.cancelEvent()
                 clearChat()
 
@@ -680,7 +681,6 @@ script.registerModule({
             if (buildingDetectionPhrase) {
                 if (clientChatContent.contains(killMessage.join(" "))) {
                     e.cancelEvent()
-
                     clearChat()
 
                     for each(var part in killMessage) {
@@ -689,15 +689,19 @@ script.registerModule({
                         comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick select as part of detection phrase.")))
                         mc.thePlayer.addChatMessage(comp)
                     }
+
                     addMessage(prefix)
+
                     var fcomp = new ChatComponentText(prefix + "§a§l[finish selection]")
                     fcomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-f building detection phrase"))
                     fcomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finish building detection phrase.")))
                     mc.thePlayer.addChatMessage(fcomp)
+
                     var ccomp = new ChatComponentText(prefix + "§c§l[cancel selection]")
                     ccomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-c building detection phrase"))
                     ccomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§cClick to cancel building detection phrase.")))
                     mc.thePlayer.addChatMessage(ccomp)
+
                     addMessage(prefix)
                 }
                 if (killMessage.includes(clientChatContent)) {
@@ -711,12 +715,12 @@ script.registerModule({
                     clearChat()
 
                     setValue(detectionPhrase, builtDetectionPhrase.join(" "))
+                    setValue(displayPotKillMessages, false)
 
                     addMessage(prefix + "Detection phrase set to §a§l" + builtDetectionPhrase.join(" "))
 
                     builtDetectionPhrase = []
                     buildingDetectionPhrase = false;
-                    setValue(displayPotKillMessages, false)
                 }
                 if (clientChatContent.contains("-c building detection phrase")) {
                     e.cancelEvent()
@@ -731,19 +735,26 @@ script.registerModule({
                 }
             }
         }
+        if (packet instanceof S00PacketDisconnect) {
+            potKillMessages = []
+        }
         if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat") {
 
             var serverChatContent = packet.getChatComponent().getUnformattedText()
             var serverContentArray = serverChatContent.split(" ")
-            var target = customIndex.get() ? serverContentArray[cIndex] : serverContentArray[0]
+            var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
+            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (function() {
+                for (var i = 0; i < serverContentArray.length; i++) {
+                    var part = serverContentArray[i]
+                    if (otherNames.includes(part)) return part
+                }
+                return null;
+            })() : serverContentArray[0])
 
             var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
 
-            if (serverChatContent.contains(mc.thePlayer.getName()) && Java.from(mc.getNetHandler().getPlayerInfoMap())
-                .map(function(info) info = info.getGameProfile().getName())
-                .filter(function(name) name != mc.thePlayer.getName())
-                .some(function (n) serverChatContent.contains(n))) {
-                    potKillMessages.push(serverContentArray)
+            if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) {
+                potKillMessages.push(serverContentArray.filter(Boolean))
             }
 
             if (selectingPhrase || buildingDetectionPhrase || invPotKillMessage) return e.cancelEvent();
@@ -790,8 +801,8 @@ script.registerModule({
     });
     module.on("world", function () {
         sendQueue = []
-        potKillMessages = []
         currentTarget = null;
+        selectingPhrase = false;
         setValue(displayPotKillMessages, false)
     })
 });
