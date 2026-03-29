@@ -16,6 +16,8 @@ A few words to clarify...
 */
 
 //To do: add FlyModes: flag longjump by shurpe, blink longjump (+max packets value), a lot of janitor work
+//make every message in chat clickable for investigation so that you can build detection phrase from there on.
+//makes potKillMessages redundant
 
 /*------------------*/
 /*      IMPORTS     */
@@ -103,6 +105,9 @@ EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
 EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
 Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
 Class = java.lang.Class;
+Desktop = java.awt.Desktop
+EntityFireball = Java.type("net.minecraft.entity.projectile.EntityFireball")
+GuiDisconnected = Java.type("net.minecraft.client.gui.GuiDisconnected")
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
@@ -299,7 +304,8 @@ var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", 
     mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
     tpWait = false, lastRiddenEntity = null, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false, path = [],
     packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null, potKillMessages = [],
-    invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = [];
+    invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = [], wasDamaged = false,
+    packetsListened = 0, sinceLastPacket = new MSTimer();
 
 
 /*------------------*/
@@ -366,6 +372,7 @@ AutoInsultValues = {
                     timeout(1, (function() setValue(customIndex, false)))
                 }
             } else if (lastKillMessage.length) {
+                clearChat()
                 addMessage(prefix+"Default position will be used.")
                 selectingPhrase = false
             }
@@ -426,19 +433,15 @@ AutoInsultValues = {
         },
         isSupported: function () header2.get() && insultMode.get() == "Custom"
     }),
-    printFileValue: printFile = Setting.boolean({
-        name: "PrintFile",
+    openCustomFileValue: openCustomFile = Setting.boolean({
+        name: "OpenFile",
         default: false,
         onChange: function (o, n) {
-            if (n && customF.length) {
-                var fileContent = Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8))
-                addMessage("")
-                for (var i = 0; i < fileContent.length; i++) {
-                    addMessage(prefix + fileContent[i])
-                }
-                addMessage("")
-                timeout(1, (function () setValue(printFile, false)));
+            if (n) {
+                var cfile = new File(insultDir, customFile.get())
+                cfile && Desktop.getDesktop().open(cfile)
             }
+            timeout(1, (function () setValue(openCustomFile, false)));
         },
         isSupported: function () header2.get() && insultMode.get() == "Custom"
     }),
@@ -500,6 +503,17 @@ AutoInsultValues = {
             }
         },
         isSupported: function() header3.get() && useCustomLetters.get()
+    }),
+    openCustomLettersValue: openCustomLetters = Setting.boolean({
+        name: "OpenFile",
+        default: false,
+        onChange: function (o, n) {
+            if (n) {
+                customLettersFile && Desktop.getDesktop().open(customLettersFile)
+            }
+            timeout(1, (function () setValue(openCustomLetters, false)));
+        },
+        isSupported: function () header3.get() && useCustomLetters.get()
     }),
     ignoreLinkValue: ignoreLink = Setting.boolean({
         name: "IgnoreLink",
@@ -583,7 +597,9 @@ function sendInsult(targetName) {
     insult = insultMode.get() == "Internal" || !userContent ? internalInsults.random() : userContent.random()
     lastTarget = targetName
 
-    sentInsult = true
+    formattedInsult = ""
+    replacedInsult = ""
+    packetsListened = 0
 
     if (!containsLink(insult)) {
         formattedInsult = insult
@@ -614,6 +630,7 @@ function sendInsult(targetName) {
         }
     }
     mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult))
+    sentInsult = true
 }
 
 function isCensoredByServer(serverContent) { //to handle the case message has been sent but got censored; may false positive but extremely rare
@@ -661,7 +678,7 @@ script.registerModule({
                 addMessage(prefix + "AutoInsultReloaded will search at the selected position for a target name.")
                 selectingPhrase = false;
             }
-            if (invPotKillMessage && potKillMessage.some(function (km) {
+            if (invPotKillMessage && potKillMessages.some(function (km) {
                 if (clientChatContent.contains(km.join(" "))) {
                     killMessage = km
                     return true;
@@ -676,19 +693,29 @@ script.registerModule({
                 mc.thePlayer.addChatMessage(comp)
                 invPotKillMessage = false;
 
-                buildingDetectionPhrase = true, builtDetectionPhrase = [];
+                buildingDetectionPhrase = true
+                builtDetectionPhrase = [];
             }
             if (buildingDetectionPhrase) {
                 if (clientChatContent.contains(killMessage.join(" "))) {
                     e.cancelEvent()
                     clearChat()
 
-                    for each(var part in killMessage) {
+                    for (var i = 0; i < killMessage.length; i++) {
+                        var part = killMessage[i]
+
                         var comp = new ChatComponentText(prefix + part)
                         comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, part))
                         comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick select as part of detection phrase.")))
                         mc.thePlayer.addChatMessage(comp)
                     }
+
+                    addMessage(prefix)
+
+                    var dcomp = new ChatComponentText(prefix + "§c§l[delete last element]")
+                    dcomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-d delete last element"))
+                    dcomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§cClick to delete the last added element.")))
+                    mc.thePlayer.addChatMessage(dcomp)
 
                     addMessage(prefix)
 
@@ -708,48 +735,73 @@ script.registerModule({
                     e.cancelEvent()
 
                     builtDetectionPhrase.push(clientChatContent)
-                    addMessage(prefix + "§a§lAdded: §7" + clientChatContent)
+                    addMessage(prefix + "§a§lDetection phrase is now: §7" + builtDetectionPhrase.join(" "))
                 }
-                if (clientChatContent.contains("-f building detection phrase")) {
+                if (clientChatContent.contains("-d delete last element")) {
                     e.cancelEvent()
-                    clearChat()
+                    builtDetectionPhrase.pop()
 
-                    setValue(detectionPhrase, builtDetectionPhrase.join(" "))
-                    setValue(displayPotKillMessages, false)
-
-                    addMessage(prefix + "Detection phrase set to §a§l" + builtDetectionPhrase.join(" "))
-
-                    builtDetectionPhrase = []
-                    buildingDetectionPhrase = false;
+                    addMessage(prefix + "§a§lDetection phrase is now: §7" + builtDetectionPhrase.join(" "))
                 }
                 if (clientChatContent.contains("-c building detection phrase")) {
                     e.cancelEvent()
                     clearChat()
 
-                    builtDetectionPhrase = []
                     buildingDetectionPhrase = false;
 
-                    addMessage(prefix + "§c§lCanceled!")
-
                     setValue(displayPotKillMessages, false)
+                    addMessage(prefix + "§c§lCanceled!")
+                }
+                if (clientChatContent.contains("-f building detection phrase")) {
+                    e.cancelEvent()
+                    clearChat()
+
+                    var fo1comp = new ChatComponentText(prefix + "§a§l[add to existing phrases]")
+                    fo1comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-fo1 add to existing phrases"))
+                    fo1comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finalize building.")))
+                    mc.thePlayer.addChatMessage(fo1comp)
+
+                    addMessage(prefix)
+
+                    var fo2comp = new ChatComponentText(prefix + "§a§l[set and replace old phrases]")
+                    fo2comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-fo2 set and replace old phrases"))
+                    fo2comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finalize building.")))
+                    mc.thePlayer.addChatMessage(fo2comp)
+                }
+                if (clientChatContent.contains("-fo1 add to existing phrases")) {
+                    e.cancelEvent()
+                    clearChat()
+
+                    var temp = detectionPhrase.get() + "," + builtDetectionPhrase.join(" ")
+
+                    setValue(detectionPhrase, temp)
+                    setValue(displayPotKillMessages, false)
+
+                    addMessage(prefix + "Detection phrase set to §a§l" + temp)
+
+                    buildingDetectionPhrase = false;
+                }
+                if (clientChatContent.contains("-fo2 set and replace old phrases")) {
+                    e.cancelEvent()
+                    clearChat()
+
+                    var temp = builtDetectionPhrase.join(" ")
+
+                    setValue(detectionPhrase, temp)
+                    setValue(displayPotKillMessages, false)
+
+                    addMessage(prefix + "Detection phrase set to §a§l" + temp)
+
+                    buildingDetectionPhrase = false;
                 }
             }
         }
-        if (packet instanceof S00PacketDisconnect) {
-            potKillMessages = []
-        }
-        if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat") {
 
+        if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat") {
             var serverChatContent = packet.getChatComponent().getUnformattedText()
             var serverContentArray = serverChatContent.split(" ")
             var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
-            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (function() {
-                for (var i = 0; i < serverContentArray.length; i++) {
-                    var part = serverContentArray[i]
-                    if (otherNames.includes(part)) return part
-                }
-                return null;
-            })() : serverContentArray[0])
+            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function(part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
 
             var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
 
@@ -763,19 +815,22 @@ script.registerModule({
                 sendInsult(target)
                 lastKillMessage = serverContentArray
             } else if (sentInsult) {
+                sinceLastPacket.reset()
                 if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins)) || isCensoredByServer(serverChatContent)) { //server (likely) displays insult for others; issue: if server sends in the same tick another packet then the whole detection is broken, only happens when e.g. when server informs you about bad message content
                     if (hyperLink.get() && sentLink) { //adds hyperlink clientside if server doesnt support hyperlink by default
                         e.cancelEvent()
                         addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLinks(insult)[0], "§a§lClick me!")
                         sentLink = false;
                     }
-                } else { //case message got blocked e.g. chat too fast; retry sending once to prevent loop
+                    sentInsult = false
+                } else if (packetsListened >= 5 || sinceLastPacket.hasTimePassed(100)) { //case message got blocked e.g. chat too fast; retry sending once to prevent loop
                     if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
                         sendQueue.push(lastTarget)
                         queueTimer.reset()
                     }
+                    sentInsult = false
                 }
-                sentInsult = false;
+                packetsListened++;
             }
         }
     });
@@ -786,6 +841,8 @@ script.registerModule({
     });
     module.on("update", function () {
         module.tag = detectionMode.get()
+
+        if (mc.currentScreen instanceof GuiDisconnected) potKillMessages = [];
 
         if (sendQueue.length && queueTimer.hasTimePassed(sendDelay.get() * 1000)) {
             lastQueueTarget = sendPriority.get() == "QUEUE" ? sendQueue.shift() : sendQueue.pop();
@@ -962,7 +1019,7 @@ script.registerModule({
 MatrixFlyValues = {
     flyModeValue: flyMode = Setting.list({
         name: "FlyMode",
-        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion", "TNTBlink"],
+        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion", "TNTBlink", "ExternalDamageGlide", "DamageGlide"],
         default: "FakeBlock"
     }),
     cancelModeValue: cancelMode = Setting.list({
@@ -1069,6 +1126,11 @@ MatrixFlyValues = {
         max: 100,
         default: 50,
         isSupported: function() flyMode.get() == "TNTBlink" && stopOnMaxPackets.get()
+    }),
+    allowFireBallValue: allowFireBall = Setting.boolean({
+        name: "AllowFireBallExplosion",
+        default: true,
+        isSupported: function () flyMode.get() == "TNTMotion" || flyMode.get() == "TNTBlink"
     })
 }
 
@@ -1167,11 +1229,11 @@ script.registerModule({
                     mc.thePlayer.motionX = 0
                     mc.thePlayer.motionZ = 0
                 }
-                if (boosted && (mc.thePlayer.onGround || mc.gameSettings.keyBindSneak.pressed)) boosted = false, mc.timer.timerSpeed = 1; 
+                if (boosted && (mc.thePlayer.onGround || mc.gameSettings.keyBindSneak.pressed)) boosted = false, mc.timer.timerSpeed = 1;
                 break;
             case "CancelC04":
                 if (cancelMode.get() == "Normal") {
-                    if (canRecieveFallDMG() && disableOn.get() && getRelativeFallDMG() >= disableOnPercentage.get() / 100) {
+                    if (canRecieveFallDMG() && disableOn.get() && getRelativeFallDMG() >= 1 - disableOnPercentage.get() / 100) {
                         MatrixFlyModule.setState(false)
                     }
                     if (mc.thePlayer.fallDistance >= 1) {
@@ -1205,7 +1267,7 @@ script.registerModule({
                     tryBoost++;
                 } else if (tryBoost >= 5) {
                     mc.timer.timerSpeed = 1
-                    if (simulateStartY > mc.thePlayer.posY) tryBoost = 0; 
+                    if (simulateStartY > mc.thePlayer.posY) tryBoost = 0;
                 }
                 break;
             case "Glide":
@@ -1271,8 +1333,33 @@ script.registerModule({
                     }
                 }
                 break;
+            case "ExternalDamageGlide":
+                var PoisonEffect = mc.thePlayer.getActivePotionEffect(Potion.poison), WitherEffect = mc.thePlayer.getActivePotionEffect(Potion.wither);
+                if (mc.thePlayer.isBurning() || PoisonEffect || WitherEffect) {
+                    if (isMovingHorizontally(mc.thePlayer)) {
+                        mc.thePlayer.motionY = -0.005
+                    } else mc.thePlayer.motionY = -0.01;
+                }
+                break;
+            case "DamageGlide":
+                if (mc.thePlayer.hurtTime > 0) wasDamaged = true;
+                if (mc.thePlayer.ticksExisted % 20 == 0) {
+                    for (var i = 0; i <= 65; i++) {
+                        PacketUtils.sendPacket(new C04PacketPlayerPosition(mc.thePlayer.posX, mc.thePlayer.posY + 0.049, mc.thePlayer.posZ, false), false)
+                        PacketUtils.sendPacket(new C04PacketPlayerPosition(mc.thePlayer.posX, mc.thePlayer.posY, mc.thePlayer.posZ, false), false)
+                    }
+                    PacketUtils.sendPacket(new C04PacketPlayerPosition(mc.thePlayer.posX, mc.thePlayer.posY, mc.thePlayer.posZ, true), false)
+                }
+                if (wasDamaged) {
+                    if (isMovingHorizontally(mc.thePlayer)) {
+                        mc.thePlayer.motionY = -0.005
+                    } else mc.thePlayer.motionY = -0.01
+                }
         }
     });
+    module.on("move", function (e) {
+        !wasDamaged && flyMode.get() == "DamageGlide" && e.zeroXZ();
+    })
     module.on("packet", function (e) {
         var packet = e.getPacket()
 
@@ -1286,7 +1373,7 @@ script.registerModule({
                 e.cancelEvent()
             }
         }
-        if ((flyMode.get() == "TNTMotion" || flyMode.get() == "TNTBlink") && packet instanceof S27PacketExplosion && getTargetsInRange(8, EntityTNTPrimed).length) {
+        if ((flyMode.get() == "TNTMotion" || flyMode.get() == "TNTBlink") && packet instanceof S27PacketExplosion && (getTargetsInRange(8, EntityTNTPrimed).length || (allowFireBall.get() ? getTargetsInRange(8, EntityFireball).length : false))) {
             tntFly = true
             if (mc.thePlayer.onGround && flyMode.get() == "TNTMotion") mc.thePlayer.jump();
         }
@@ -1325,6 +1412,7 @@ script.registerModule({
         boosted = false
         tntFly = false
         tntStartBoost = false
+        wasDamaged = false
         BlinkUtils.unblink()
     })
 });
@@ -1785,7 +1873,7 @@ script.registerModule({
         }
 
         if (antiBot.get()) {
-            switch (antiBotMode.get()) {
+            switch (antiBotMode.get()) { //reconsider since not everything needs to be in onPacket
                 case "OldZombie":
                     getTargetsInRange(10, EntityZombie).filter(function (z) z.isInvisible()).map(function (bot) {
                         mc.theWorld.removeEntity(bot)
