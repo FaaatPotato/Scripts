@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.2",
+    version: "1.0.4",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -45,7 +45,8 @@ C0CPacketInput = Java.type("net.minecraft.network.play.client.C0CPacketInput")
 S41PacketServerDifficulty = Java.type("net.minecraft.network.play.server.S41PacketServerDifficulty")
 S38PacketPlayerListItem = Java.type("net.minecraft.network.play.server.S38PacketPlayerListItem")
 S3CPacketUpdateScore = Java.type("net.minecraft.network.play.server.S3CPacketUpdateScore")
-S00PacketDisconnect = Java.type("net.minecraft.network.login.server.S00PacketDisconnect")
+S40PacketDisconnect = Java.type("net.minecraft.network.play.server.S40PacketDisconnect")
+S00PacketServerInfo = Java.type("net.minecraft.network.status.server.S00PacketServerInfo")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
 EntityTNTPrimed = Java.type("net.minecraft.entity.item.EntityTNTPrimed")
 Entity = Java.type("net.minecraft.entity.Entity")
@@ -101,13 +102,11 @@ TileEntityRendererDispatcher = Java.type("net.minecraft.client.renderer.tileenti
 BlockFlowerPot = Java.type("net.minecraft.block.BlockFlowerPot")
 ClosedDoubleRange = Java.type("kotlin.ranges.ClosedFloatingPointRange")
 Keyboard = org.lwjgl.input.Keyboard
-EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
 EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
 Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
 Class = java.lang.Class;
 Desktop = java.awt.Desktop
 EntityFireball = Java.type("net.minecraft.entity.projectile.EntityFireball")
-GuiDisconnected = Java.type("net.minecraft.client.gui.GuiDisconnected")
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
@@ -282,14 +281,14 @@ var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", 
         "I personally would just surrender.",
         "absolute beginner ffs",
         "this game is not made for you...",
-        "people as bad as you should not play this game.",
+        "people as bad as you shouldn't play this game.",
         "listen, go to bed. I already sent you to sleep.",
-        "buddy, try harder next time ig.",
+        "buddy, try harder next time I guess.",
         "seems like you lost. Must have happened before. Maybe quit?",
         "let me give you a little.. life lesson. Life fucks you like I did.",
-        "you should've prayed. Not to survive me but to die against someone else.",
-        "still can't do nothing against cheats",
-        "you got absolutely beat up my g. Must be fun playing legit :)",
+        "you should've prayed to fight someone else.",
+        "still can't do shit against cheats",
+        "you got absolutely beat up. Must be fun playing legit :)",
         "no words for such miserable performance",
         "you couldn't look more foolish",
         "get clowned",
@@ -302,7 +301,7 @@ var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", 
     destinationPos = null, sentPackets = 0, lookingAt = null, isMoving = false,
     formattedInsult = "", replacedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
     mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
-    tpWait = false, lastRiddenEntity = null, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false, path = [],
+    tpWait = false, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false, path = [],
     packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null, potKillMessages = [],
     invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = [], wasDamaged = false,
     packetsListened = 0, sinceLastPacket = new MSTimer();
@@ -397,8 +396,7 @@ AutoInsultValues = {
                     addMessage(prefix + "No potential messages detected!")
                     timeout(1, (function() setValue(displayPotKillMessages, false)))
                 }
-            }
-            if (n == false && potKillMessages.length) {
+            } else if (potKillMessages.length) {
                 clearChat()
                 invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = []
             }
@@ -645,7 +643,6 @@ function isCensoredByServer(serverContent) { //to handle the case message has be
     if (startI === undefined) return false
 
     var potInsult = m_split.slice(startI, startI + c_split.length)
-
     if (potInsult.join(" ").length == c.length && (function() {
         for (var j = 0; j < potInsult.length; j++) {
             if (potInsult[j].length != c_split[j].length) return false;
@@ -797,12 +794,13 @@ script.registerModule({
             }
         }
 
-        if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat") {
+        if (packet instanceof S00PacketServerInfo) potKillMessage = []
+
+        if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat" && mc.theWorld) {
             var serverChatContent = packet.getChatComponent().getUnformattedText()
             var serverContentArray = serverChatContent.split(" ")
             var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
             var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function(part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
-
             var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
 
             if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) {
@@ -816,19 +814,21 @@ script.registerModule({
                 lastKillMessage = serverContentArray
             } else if (sentInsult) {
                 sinceLastPacket.reset()
-                if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins)) || isCensoredByServer(serverChatContent)) { //server (likely) displays insult for others; issue: if server sends in the same tick another packet then the whole detection is broken, only happens when e.g. when server informs you about bad message content
-                    if (hyperLink.get() && sentLink) { //adds hyperlink clientside if server doesnt support hyperlink by default
-                        e.cancelEvent()
-                        addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLinks(insult)[0], "§a§lClick me!")
+                if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins)) || isCensoredByServer(serverChatContent)) {
+                    if (hyperLink.get() && sentLink) {
+                        if (!packet.getChatComponent().getChatStyle().getChatClickEvent()) {
+                            e.cancelEvent()
+                            addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLinks(insult)[0], "§a§lClick me!")
+                        }
                         sentLink = false;
                     }
                     sentInsult = false
-                } else if (packetsListened >= 5 || sinceLastPacket.hasTimePassed(100)) { //case message got blocked e.g. chat too fast; retry sending once to prevent loop
+                } else if (packetsListened >= 5 || sinceLastPacket.hasTimePassed(100)) {
                     if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
                         sendQueue.push(lastTarget)
                         queueTimer.reset()
                     }
-                    sentInsult = false
+                    sentInsult = false, sentLink = false;
                 }
                 packetsListened++;
             }
@@ -839,10 +839,17 @@ script.registerModule({
             currentTarget = e.getTargetEntity();
         }
     });
+    module.on("world", function () {
+        sendQueue = []
+        currentTarget = null;
+        selectingPhrase = false;
+        setValue(displayPotKillMessages, false)
+    })
+    module.on("screen", function (e) {
+        if (e.guiScreen == null) potKillMessages = []
+    })
     module.on("update", function () {
         module.tag = detectionMode.get()
-
-        if (mc.currentScreen instanceof GuiDisconnected) potKillMessages = [];
 
         if (sendQueue.length && queueTimer.hasTimePassed(sendDelay.get() * 1000)) {
             lastQueueTarget = sendPriority.get() == "QUEUE" ? sendQueue.shift() : sendQueue.pop();
@@ -856,12 +863,6 @@ script.registerModule({
             }
         }
     });
-    module.on("world", function () {
-        sendQueue = []
-        currentTarget = null;
-        selectingPhrase = false;
-        setValue(displayPotKillMessages, false)
-    })
 });
 
 MatrixFuckerValues = {
@@ -1385,20 +1386,22 @@ script.registerModule({
         if (!renderAirTime.get() || flyMode.get() != "CancelC04" || cancelMode.get() != "Normal" || !canRecieveFallDMG() || mc.thePlayer.onGround) return;
 
         var percentage = getRelativeFallDMG() * 100,
-            renderDMG = getRelativeFallDMG() < 1 ? getRelativeFallDMG() : 1
+            renderDMG = getRelativeFallDMG() < 1 ? getRelativeFallDMG() : 1,
+            screenWidth = new ScaledResolution(mc).getScaledWidth(),
+            screenHeight = new ScaledResolution(mc).getScaledHeight();
 
-        Gui.drawRect(470, 280, 340, 343, new Color(20, 20, 20).getRGB());
-        Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
+        Gui.drawRect(screenWidth / 2 - 10, screenHeight / 2 + 10, screenWidth / 2 - 140, screenHeight / 2 + 73, new Color(20, 20, 20).getRGB());
+        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 13, screenWidth / 2 - 137, screenHeight / 2 + 28, new Color(50, 50, 50).getRGB());
         if (percentage < 100) {
-            mcFont.drawString("LANDING SURVIVABLE", 346, 286, 0x11ff00)
-        } else mcFont.drawString("YOU WILL DIE", 346, 286, 0xff0000)
+            mcFont.drawString("LANDING SURVIVABLE", screenWidth / 2 - 134, screenHeight / 2 + 17, 0x11ff00)
+        } else mcFont.drawString("YOU WILL DIE", screenWidth / 2 - 134, screenHeight / 2 + 17, 0xff0000)
 
-        Gui.drawRect(467, 301, 343, 332, new Color(50, 50, 50).getRGB());
-        mcFont.drawString("Spent ~" + percentage.toFixed(2) + "%", 345, 304, 0xFFFFFF);
-        mcFont.drawString("OF MAX AIR TIME", 345, 320, 0xFFFFFF);
+        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 31, screenWidth / 2 - 137, screenHeight / 2 + 62, new Color(50, 50, 50).getRGB());
+        mcFont.drawString("Spent ~" + percentage.toFixed(2) + "%", screenWidth / 2 - 135, screenHeight / 2 + 34, 0xFFFFFF);
+        mcFont.drawString("OF MAX AIR TIME", screenWidth / 2 - 135, screenHeight / 2 + 50, 0xFFFFFF);
 
-        Gui.drawRect(467, 335, 343, 340, new Color(50, 50, 50).getRGB());
-        Gui.drawRect(343, 335, 467 + 124 * renderDMG - 124, 340, Color.HSBtoRGB(renderDMG / 5, 1.0, 1.0) | 0xFF0000);
+        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 65, screenWidth / 2 - 137, screenHeight / 2 + 70, new Color(50, 50, 50).getRGB());
+        Gui.drawRect(screenWidth / 2 - 137, screenHeight / 2 + 65, screenWidth / 2 - 13 + 124 * renderDMG - 124, screenHeight / 2 + 70, Color.HSBtoRGB(renderDMG / 5, 1.0, 1.0) | 0xFF0000);
     })
     module.on("world", function () {
         if (flyMode.get() == "S08SimulateSetback") ModuleManager.getModule("MatrixFly").setState(false) //prevent infinite loading screen
@@ -1425,8 +1428,8 @@ MatrixClickTPValues = {
     }),
     clickTpModeValue: clickTpMode = Setting.list({
         name: "Mode",
-        values: ["PacketSpam", "OverwriteLastC04"],
-        default: "OverwriteLastC04"
+        values: ["PacketSpam", "CyclePackets"],
+        default: "CyclePackets"
     }),
     maxPacketsValue: maxPackets = Setting.integer({
         name: "MaxPackets",
@@ -1446,7 +1449,7 @@ MatrixClickTPValues = {
         min: 1,
         max: 5,
         default: 2,
-        isSupported: function() clickTpMode.get() == "OverwriteLastC04"
+        isSupported: function() clickTpMode.get() == "CyclePackets"
     }),
     tpTimerValue: tpTimer = Setting.float({
         name: "TimerSpeed",
@@ -1563,7 +1566,7 @@ script.registerModule({
 
         mc.timer.timerSpeed = tpTimer.get()
 
-        if (clickTpMode.get() == "PacketSpam") handleAction();
+        if (clickTpMode.get() == "PacketSpam") handleAction()
     })
     module.on("render3D", function () {
         lookingAt = mc.thePlayer.rayTrace(255, 1)
@@ -1629,13 +1632,13 @@ script.registerModule({
                 addMessage(prefix + "Teleport failed!")
                 addMessage(prefix + "Sent §c§l" + sentPackets + " §7packets")
                 MatrixTeleportModule.setState(false)
-            } else if (clickTpMode.get() == "OverwriteLastC04") {
+            } else if (clickTpMode.get() == "CyclePackets") {
                 tpWait = true
                 finalPackets += sentPackets
                 sentPackets = 0;
                 tpWaitTimer.reset()
             }
-        } else if (!hasArrived() && clickTpMode.get() == "OverwriteLastC04" && !mc.thePlayer.isRiding()) MatrixTeleportModule.setState(false), addMessage(""), addMessage(prefix + "§c§lCanceled Teleport!"), addMessage(prefix + "Dismounted too early!"), addMessage("");
+        } else if (!hasArrived() && clickTpMode.get() == "CyclePackets" && !mc.thePlayer.isRiding()) MatrixTeleportModule.setState(false), addMessage(""), addMessage(prefix + "§c§lCanceled Teleport!"), addMessage(prefix + "Dismounted too early!"), addMessage("");
 
         ModuleManager.getModule("FreeCam").setState(false)
 
@@ -1648,9 +1651,9 @@ script.registerModule({
     module.on("packet", function (e) {
         var packet = e.getPacket()
 
-        if (mc.thePlayer.isRiding() && destinationPos && clickTpMode.get() != "PacketSpam") { //this way because i want to add another boat mode
+        if (mc.thePlayer.isRiding() && destinationPos && clickTpMode.get() != "PacketSpam") {
             if (packet instanceof S08PacketPlayerPosLook) {
-                if (clickTpMode.get() == "OverwriteLastC04") !tpWait && handleAction("desync", e);
+                if (clickTpMode.get() == "CyclePackets") !tpWait && handleAction("desync", e);
             }
         }
     })
@@ -1662,7 +1665,6 @@ script.registerModule({
         mc.timer.timerSpeed = 1
         finalPackets = 0;
         tpWait = false;
-        lastRiddenEntity = null
 
         ModuleManager.getModule("FreeCam").setState(false)
     })
@@ -1873,7 +1875,8 @@ script.registerModule({
         }
 
         if (antiBot.get()) {
-            switch (antiBotMode.get()) { //reconsider since not everything needs to be in onPacket
+            if (!mc.theWorld) return;
+            switch (antiBotMode.get()) { //not everything in onPacket
                 case "OldZombie":
                     getTargetsInRange(10, EntityZombie).filter(function (z) z.isInvisible()).map(function (bot) {
                         mc.theWorld.removeEntity(bot)
