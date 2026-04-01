@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.4",
+    version: "1.0.5",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -104,9 +104,10 @@ ClosedDoubleRange = Java.type("kotlin.ranges.ClosedFloatingPointRange")
 Keyboard = org.lwjgl.input.Keyboard
 EntityZombie = Java.type("net.minecraft.entity.monster.EntityZombie")
 Remapper = Java.type("net.ccbluex.liquidbounce.script.remapper.Remapper");
-Class = java.lang.Class;
+Class = java.lang.Class
 Desktop = java.awt.Desktop
 EntityFireball = Java.type("net.minecraft.entity.projectile.EntityFireball")
+URI = java.net.URI
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
@@ -228,16 +229,26 @@ function clearChat() mc.ingameGUI.getChatGUI().clearChatMessages();
 
 function rand(min /*[min, max]*/, max) (Array.isArray(min) && (min = min[0], max = min[1]), Math.random() * (max - min) + min);
 
-function addMessage(message, URL, hoverText) {
-    URL || null; hoverText || null;
+function addMessage(message) {
+    var events = [].slice.call(arguments).slice(1) //Array.from
+
     var comp = new ChatComponentText(message)
-    if (URL) {
-        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, URL))
-        if (hoverText) {
-            comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText(hoverText)))
+    var style = comp.getChatStyle()
+
+    if (events.length) {
+        for (var i = 0; i < events.length; i++) {
+            var event = events[i][0], text = events[i][1], action = events[i][2];
+            switch (event) {
+                case "clickEvent":
+                    action = action || "OPEN_URL"
+                    style.setChatClickEvent(new ClickEvent(ClickEvent.Action[action], text))
+                    break;
+                case "hoverEvent":
+                    action = action || "SHOW_TEXT"
+                    style.setChatHoverEvent(new HoverEvent(HoverEvent.Action[action], new ChatComponentText(text)))
+                    break;
+            }
         }
-    } else if (!URL && hoverText) {
-        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText(hoverText)))
     }
     mc.thePlayer.addChatMessage(comp)
 }
@@ -266,6 +277,16 @@ function getDist(blockPosA, blockPosB) {
     var a = new Vec3(blockPosA.getX() + 0.5, blockPosA.getY() + 0.5, blockPosA.getZ() + 0.5)
     var b = new Vec3(blockPosB.getX() + 0.5, blockPosB.getY() + 0.5, blockPosB.getZ() + 0.5)
     return a.distanceTo(b)
+}
+
+function setValue(val, newValue) {
+    if (val.get() === newValue) return;
+    try {
+        //kotlin value.set takes newValue instanceof some sealed class and boolean save to config
+        return getMethod(val.getClass(), "set").invoke(val, newValue, true)
+    } catch (e) {
+        addMessage(e)
+    }
 }
 
 /*------------------*/
@@ -356,11 +377,8 @@ AutoInsultValues = {
                     addMessage("")
                     addMessage(prefix+"Lastest message containing §7'§a§lkilled by "+mc.thePlayer.getName()+"§7'")
                     addMessage("")
-                    for each (var part in lastKillMessage) {
-                        var comp = new ChatComponentText(prefix + part)
-                        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, part))
-                        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to select as target name position.")))
-                        mc.thePlayer.addChatMessage(comp)
+                    for each(var part in lastKillMessage) {
+                        addMessage(prefix + part, ["clickEvent", part, "RUN_COMMAND"], ["hoverEvent", "§aClick to select as target name position."])
                     }
                     addMessage("")
                     selectingPhrase = true
@@ -386,10 +404,7 @@ AutoInsultValues = {
                 if (potKillMessages.length) {
                     for each(var arr in potKillMessages) {
                         var potKillMessage = arr.join(" ")
-                        var comp = new ChatComponentText(prefix + potKillMessage)
-                        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, potKillMessage))
-                        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to inspect kill message.")))
-                        mc.thePlayer.addChatMessage(comp)
+                        addMessage(prefix + potKillMessage, ["clickEvent", potKillMessage, "RUN_COMMAND"], ["hoverEvent", "§aClick to inspect kill message."])
                     }
                     invPotKillMessage = true;
                 } else {
@@ -533,7 +548,7 @@ AutoInsultValues = {
         isSupported: function () header4.get()
     }),
     sendDelayValue: sendDelay = Setting.integer({
-        name: "SendDelay [s]",
+        name: "SendDelay[s]",
         min: 1,
         max: 10,
         default: 3,
@@ -549,28 +564,7 @@ AutoInsultValues = {
 
 var valueCustomFileReflector = new Reflector(customFile), valueCustomLettersReflector = new Reflector(customLetters);
 
-function setValue(valueInstance, newValue) { //because value.set doesnt work lmao; rework ts
-    if (valueInstance.get() === newValue) {
-        return;
-    }
-    var methods = valueInstance.getClass().getMethods();
-    for (var i = 0; i < methods.length; i++) {
-        var method = methods[i];
-        if (method.getName() === "set") {
-            try {
-                method.setAccessible(true);
-                if (method.getParameterCount() === 2) {
-                    method.invoke(valueInstance, newValue, false);
-                    return;
-                }
-            } catch (e) {
-                continue;
-            }
-        }
-    }
-}
-
-function containsLink(message) message.contains("http://") || message.contains("www.") || message.contains("https://");
+function containsLink(message) message.contains("http://") || message.contains("www.") || message.contains("https://") || (function () { try { return !!URI.create(message).toURL() } catch (e) { return false } })();
 
 function extractLinks(message) message.split(" ").filter(function (part) containsLink(part));
 
@@ -621,7 +615,7 @@ function sendInsult(targetName) {
         var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())]
         replacedInsult = ""
         for (i = 0; i < formattedInsult.length; i++) {
-            var letterIndex = "abcdefghijklmnopqrstuvwxyz".indexOf(formattedInsult[i].toLowerCase())
+            var letterIndex = alphabet.indexOf(formattedInsult[i].toLowerCase())
             if (letterIndex !== -1 && shouldReplaceLetter(i, formattedInsult)) {
                 replacedInsult += customAlphabet[letterIndex]
             } else replacedInsult += formattedInsult[i];
@@ -684,10 +678,7 @@ script.registerModule({
                 e.cancelEvent()
                 clearChat()
 
-                var comp = new ChatComponentText(prefix + killMessage.join(" "))
-                comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, killMessage.join(" ")))
-                comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick build detection phrase.")))
-                mc.thePlayer.addChatMessage(comp)
+                addMessage(prefix + killMessage.join(" "), ["clickEvent", killMessage.join(" "), "RUN_COMMAND"], ["hoverEvent", "§aClick build detection phrase."])
                 invPotKillMessage = false;
 
                 buildingDetectionPhrase = true
@@ -700,32 +691,13 @@ script.registerModule({
 
                     for (var i = 0; i < killMessage.length; i++) {
                         var part = killMessage[i]
-
-                        var comp = new ChatComponentText(prefix + part)
-                        comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, part))
-                        comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick select as part of detection phrase.")))
-                        mc.thePlayer.addChatMessage(comp)
+                        addMessage(prefix + part, ["clickEvent", part, "RUN_COMMAND"], ["hoverEvent", "§aClick select as part of detection phrase."])
                     }
-
                     addMessage(prefix)
-
-                    var dcomp = new ChatComponentText(prefix + "§c§l[delete last element]")
-                    dcomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-d delete last element"))
-                    dcomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§cClick to delete the last added element.")))
-                    mc.thePlayer.addChatMessage(dcomp)
-
+                    addMessage(prefix + "§c§l[delete last element]", ["clickEvent", "-d delete last element", "RUN_COMMAND"], ["hoverEvent", "§cClick to delete the last added element."])
                     addMessage(prefix)
-
-                    var fcomp = new ChatComponentText(prefix + "§a§l[finish selection]")
-                    fcomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-f building detection phrase"))
-                    fcomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finish building detection phrase.")))
-                    mc.thePlayer.addChatMessage(fcomp)
-
-                    var ccomp = new ChatComponentText(prefix + "§c§l[cancel selection]")
-                    ccomp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-c building detection phrase"))
-                    ccomp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§cClick to cancel building detection phrase.")))
-                    mc.thePlayer.addChatMessage(ccomp)
-
+                    addMessage(prefix + "§a§l[finish selection]", ["clickEvent", "-f building detection phrase", "RUN_COMMAND"], ["hoverEvent", "§aClick to finish building detection phrase."])
+                    addMessage(prefix + "§c§l[cancel selection]", ["clickEvent", "-c building detection phrase", "RUN_COMMAND"], ["hoverEvent", "§cClick to cancel building detection phrase."])
                     addMessage(prefix)
                 }
                 if (killMessage.includes(clientChatContent)) {
@@ -753,17 +725,9 @@ script.registerModule({
                     e.cancelEvent()
                     clearChat()
 
-                    var fo1comp = new ChatComponentText(prefix + "§a§l[add to existing phrases]")
-                    fo1comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-fo1 add to existing phrases"))
-                    fo1comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finalize building.")))
-                    mc.thePlayer.addChatMessage(fo1comp)
-
+                    addMessage(prefix + "§a§l[add to existing phrases]", ["clickEvent", "-fo1 add to existing phrases", "RUN_COMMAND"], ["hoverEvent", "§aClick to finalize building."])
                     addMessage(prefix)
-
-                    var fo2comp = new ChatComponentText(prefix + "§a§l[set and replace old phrases]")
-                    fo2comp.getChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "-fo2 set and replace old phrases"))
-                    fo2comp.getChatStyle().setChatHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ChatComponentText("§aClick to finalize building.")))
-                    mc.thePlayer.addChatMessage(fo2comp)
+                    addMessage(prefix + "§a§l[set and replace old phrases]", ["clickEvent", "-fo2 set and replace old phrases", "RUN_COMMAND"], ["hoverEvent", "§aClick to finalize building."])
                 }
                 if (clientChatContent.contains("-fo1 add to existing phrases")) {
                     e.cancelEvent()
@@ -794,18 +758,17 @@ script.registerModule({
             }
         }
 
-        if (packet instanceof S00PacketServerInfo) potKillMessage = []
+        if (packet instanceof S00PacketServerInfo) potKillMessage = [];
 
         if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat" && mc.theWorld) {
             var serverChatContent = packet.getChatComponent().getUnformattedText()
             var serverContentArray = serverChatContent.split(" ")
             var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
-            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function(part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
+
+            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
             var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
 
-            if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) {
-                potKillMessages.push(serverContentArray.filter(Boolean))
-            }
+            if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) potKillMessages.push(serverContentArray.filter(Boolean));
 
             if (selectingPhrase || buildingDetectionPhrase || invPotKillMessage) return e.cancelEvent();
 
@@ -818,7 +781,7 @@ script.registerModule({
                     if (hyperLink.get() && sentLink) {
                         if (!packet.getChatComponent().getChatStyle().getChatClickEvent()) {
                             e.cancelEvent()
-                            addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", extractLinks(insult)[0], "§a§lClick me!")
+                            addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", ["clickEvent", extractLinks(insult)[0]], ["hoverEvent", "§a§lClick me!"])
                         }
                         sentLink = false;
                     }
@@ -845,9 +808,6 @@ script.registerModule({
         selectingPhrase = false;
         setValue(displayPotKillMessages, false)
     })
-    module.on("screen", function (e) {
-        if (e.guiScreen == null) potKillMessages = []
-    })
     module.on("update", function () {
         module.tag = detectionMode.get()
 
@@ -858,8 +818,7 @@ script.registerModule({
         if (currentTarget && detectionMode.get() == "Classic") {
             if (currentTarget.isDead || currentTarget.getHealth <= 0 && !mc.thePlayer.getHealth <= 0 && !mc.thePlayer.isDead && currentTarget.getLastAttacker() == mc.thePlayer && mc.thePlayer) { //Issue: sends Insult if target is out of renderdist
                 sendInsult(currentTarget.getName())
-                currentTarget = null;
-                return
+                return currentTarget = null;
             }
         }
     });
@@ -975,7 +934,7 @@ function breakBlock(blockPos, range, swing, rotation) {
 script.registerModule({
     name: "MatrixFucker",
     category: "Fun",
-    description: "Fucker module exploiting insufficient Matrix fucker checks",
+    description: "Fucker module exploiting that Matrix only checked if player was breaking bed if the most inner layer around the bed was intact",
     settings: MatrixFuckerValues
 }, function (module) {
     module.on("update", function () {
@@ -1319,18 +1278,11 @@ script.registerModule({
                     mc.thePlayer.motionY = 0
                     MovementUtils.strafe(tntBlinkBoost.get())
 
-                    if (BlinkUtils.packets.size() >= tntBlinkMaxPackets.get() && stopOnMaxPackets.get()) {
+                    if (BlinkUtils.packets.size() >= tntBlinkMaxPackets.get() && stopOnMaxPackets.get() || mc.gameSettings.keyBindSneak.pressed) {
                         BlinkUtils.unblink()
                         mc.thePlayer.motionX = 0;
                         mc.thePlayer.motionZ = 0;
                         tntFly = false;
-                    }
-                    if (mc.gameSettings.keyBindSneak.pressed) {
-                        BlinkUtils.unblink()
-                        mc.thePlayer.motionX = 0
-                        mc.thePlayer.motionZ = 0
-                        tntFly = false
-
                     }
                 }
                 break;
