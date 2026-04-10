@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.5",
+    version: "1.0.6",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -279,11 +279,11 @@ function getDist(blockPosA, blockPosB) {
     return a.distanceTo(b)
 }
 
-function setValue(val, newValue) {
-    if (val.get() === newValue) return;
+function setValue(val, nval) {
+    if (val.get() === nval) return;
     try {
         //kotlin value.set takes newValue instanceof some sealed class and boolean save to config
-        return getMethod(val.getClass(), "set").invoke(val, newValue, true)
+        return getMethod(val.getClass(), "set").invoke(val, nval, true)
     } catch (e) {
         addMessage(e)
     }
@@ -320,12 +320,12 @@ var currentTarget = null, prefix = "§8§l[§" + ["5", "d", "9", "1", "3", "b", 
     lastQueueTarget = null, clientChatContent = "", cIndex = null, glideMotionTicks = 0, glideTicks = 0, isBlock = false,
     selectTimer = new MSTimer(), renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
     destinationPos = null, sentPackets = 0, lookingAt = null, isMoving = false,
-    formattedInsult = "", replacedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
+    formattedInsult = "", tntFly = false, tntStartBoost = false, returnToLastOnGroundPos = null,
     mts = 0, ds = 0, tntBlinkPackets = [], finalPackets = 0, wasAdded = !!mc.thePlayer, tpWaitTimer = new MSTimer(),
     tpWait = false, alphabet = "abcdefghijklmnopqrstuvwxyz", isStepping = false, path = [],
     packetPositions = [], targetEntity = null, tpHitTimer = new MSTimer(), ds = 0, oldTarget = null, potKillMessages = [],
     invPotKillMessage = false, killMessage = [], buildingDetectionPhrase = false, builtDetectionPhrase = [], wasDamaged = false,
-    packetsListened = 0, sinceLastPacket = new MSTimer();
+    packetsListened = 0, sinceLastPacket = new MSTimer(), strafeGlideTicks = 0;
 
 
 /*------------------*/
@@ -358,6 +358,8 @@ AutoInsultValues = {
         onChange: function (o, n) {
             if (n) {
                 var temp = n.split(",").unique().filter(Boolean)
+                timeout(1, (function () setValue(detectionPhrase, temp.join(","))))
+                clearChat()
                 addMessage(prefix + "Module will search for '§a§l" + temp.join("§7' or '§a§l") + "§7' + §a§l" + mc.thePlayer.getName())
             }
         },
@@ -590,7 +592,6 @@ function sendInsult(targetName) {
     lastTarget = targetName
 
     formattedInsult = ""
-    replacedInsult = ""
     packetsListened = 0
 
     if (!containsLink(insult)) {
@@ -612,41 +613,51 @@ function sendInsult(targetName) {
         sentLink = true;
     }
     if (useCustomLetters.get()) {
-        var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())]
-        replacedInsult = ""
+        var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())], replacedInsult = "";
         for (i = 0; i < formattedInsult.length; i++) {
             var letterIndex = alphabet.indexOf(formattedInsult[i].toLowerCase())
             if (letterIndex !== -1 && shouldReplaceLetter(i, formattedInsult)) {
                 replacedInsult += customAlphabet[letterIndex]
             } else replacedInsult += formattedInsult[i];
         }
+        formattedInsult = replacedInsult
     }
-    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + (useCustomLetters.get() ? replacedInsult : formattedInsult))
+    mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + formattedInsult)
     sentInsult = true
 }
 
-function isCensoredByServer(serverContent) { //to handle the case message has been sent but got censored; may false positive but extremely rare
-    var m_split = serverContent.split(" "), c = (useCustomLetters.get() ? replacedInsult : formattedInsult), c_split = c.split(" "), startI;
+//implementation of https://www.youtube.com/watch?v=Dd_NgYVOdLk
+//amazing video on this algorithm
 
-    for (var i = 0; i < m_split.length; i++) {
-        if (m_split[i].length == c_split[0].length) {
-            startI = i
-            break
+function getEditingDistance(inputStr, convertTo) {
+    var matrix = [], cols = inputStr.length + 1, rows = convertTo.length + 1;
+
+    for (var i = 0; i < cols; i++) { //no Array.from(bounds) yet
+        matrix[i] = []
+        for (var j = 0; j < rows; j++) {
+            matrix[i][j] = 0
         }
     }
-    if (startI === undefined) return false
 
-    var potInsult = m_split.slice(startI, startI + c_split.length)
-    if (potInsult.join(" ").length == c.length && (function() {
-        for (var j = 0; j < potInsult.length; j++) {
-            if (potInsult[j].length != c_split[j].length) return false;
+    for (var i = 0; i < cols; i++) matrix[i][0] = i;
+    for (var j = 0; j < rows; j++) matrix[0][j] = j;
+
+    for (var col = 1; col < cols; col++) {
+        for (var row = 1; row < rows; row++) {
+            if (inputStr[col - 1] === convertTo[row - 1]) matrix[col][row] = matrix[col - 1][row - 1]; else {
+                matrix[col][row] = Math.min(matrix[col - 1][row], matrix[col][row - 1], matrix[col - 1][row - 1]) + 1
+            }
         }
-        return true;
-    })()) return true; else {
-        m_split.splice(startI, 1)
-        return isCensoredByServer(m_split.join(" "))
     }
-    return false
+    return matrix[cols - 1][rows - 1]
+}
+
+function similarToInsult(serverContent) {
+    for (var i = 0; i < serverContent.length - formattedInsult.length; i++) {
+        var sub = serverContent.substring(i, i + formattedInsult.length + 5)
+        if (getEditingDistance(sub, formattedInsult) / Math.max(sub.length, formattedInsult.length) <= 0.3) return true;
+    }
+    return false;
 }
 
 script.registerModule({
@@ -726,7 +737,6 @@ script.registerModule({
                     clearChat()
 
                     addMessage(prefix + "§a§l[add to existing phrases]", ["clickEvent", "-fo1 add to existing phrases", "RUN_COMMAND"], ["hoverEvent", "§aClick to finalize building."])
-                    addMessage(prefix)
                     addMessage(prefix + "§a§l[set and replace old phrases]", ["clickEvent", "-fo2 set and replace old phrases", "RUN_COMMAND"], ["hoverEvent", "§aClick to finalize building."])
                 }
                 if (clientChatContent.contains("-fo1 add to existing phrases")) {
@@ -758,43 +768,44 @@ script.registerModule({
             }
         }
 
-        if (packet instanceof S00PacketServerInfo) potKillMessage = [];
+        if (packet instanceof S00PacketServerInfo) potKillMessages = [];
 
-        if (packet instanceof S02PacketChat && detectionMode.get() == "PacketChat" && mc.theWorld) {
-            var serverChatContent = packet.getChatComponent().getUnformattedText()
-            var serverContentArray = serverChatContent.split(" ")
-            var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
+        if (packet instanceof S02PacketChat) {
+            if (detectionMode.get() == "PacketChat" && mc.theWorld) {
+                var serverChatContent = packet.getChatComponent().getUnformattedText()
+                var serverContentArray = serverChatContent.split(" ")
+                var otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()).filter(function (name) name != mc.thePlayer.getName())
 
-            var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
-            var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
+                var target = customIndex.get() ? serverContentArray[cIndex] : (smartTargetIndex.get() ? (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) : serverContentArray[0])
+                var scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean)
 
-            if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) potKillMessages.push(serverContentArray.filter(Boolean));
+                if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) potKillMessages.push(serverContentArray.filter(Boolean));
 
-            if (selectingPhrase || buildingDetectionPhrase || invPotKillMessage) return e.cancelEvent();
+                if (selectingPhrase || buildingDetectionPhrase || invPotKillMessage) return e.cancelEvent();
 
-            if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
-                sendInsult(target)
-                lastKillMessage = serverContentArray
-            } else if (sentInsult) {
-                sinceLastPacket.reset()
-                if ([formattedInsult, replacedInsult].some(function (ins) serverChatContent.contains(ins)) || isCensoredByServer(serverChatContent)) {
-                    if (hyperLink.get() && sentLink) {
-                        if (!packet.getChatComponent().getChatStyle().getChatClickEvent()) {
-                            e.cancelEvent()
-                            addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", ["clickEvent", extractLinks(insult)[0]], ["hoverEvent", "§a§lClick me!"])
+                if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
+                    sendInsult(target)
+                    lastKillMessage = serverContentArray
+                } else if (sentInsult) {
+                    if (serverChatContent.contains(formattedInsult) || similarToInsult(serverChatContent)) {
+                        if (sentLink) {
+                            if (hyperLink.get() && !packet.getChatComponent().getChatStyle().getChatClickEvent()) {
+                                e.cancelEvent()
+                                addMessage(packet.getChatComponent().getFormattedText() + " §a§l[OPEN]", ["clickEvent", extractLinks(insult)[0]], ["hoverEvent", "§a§lClick me!"])
+                            }
+                            sentLink = false
                         }
-                        sentLink = false;
+                        sentInsult = false
                     }
-                    sentInsult = false
-                } else if (packetsListened >= 5 || sinceLastPacket.hasTimePassed(100)) {
-                    if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
-                        sendQueue.push(lastTarget)
-                        queueTimer.reset()
-                    }
-                    sentInsult = false, sentLink = false;
+                    packetsListened += 1;
                 }
-                packetsListened++;
             }
+        }
+        if (sentInsult && (sinceLastPacket.hasTimePassed(100) && packetsListened > 0 || packetsListened >= 10)) {
+            if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
+                sendQueue.push(lastTarget)
+                queueTimer.reset()
+            } sentInsult = false, sentLink = false;
         }
     });
     module.on("attack", function(e) {
@@ -806,6 +817,8 @@ script.registerModule({
         sendQueue = []
         currentTarget = null;
         selectingPhrase = false;
+        sentInsult = false
+        sentLink = false
         setValue(displayPotKillMessages, false)
     })
     module.on("update", function () {
@@ -979,7 +992,7 @@ script.registerModule({
 MatrixFlyValues = {
     flyModeValue: flyMode = Setting.list({
         name: "FlyMode",
-        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion", "TNTBlink", "ExternalDamageGlide", "DamageGlide"],
+        values: ["FakeBlock", "BoatFly", "CancelC04", "S08SimulateSetback", "Glide", "Glide2", "TNTMotion", "TNTBlink", "ExternalDamageGlide", "DamageGlide", "BlinkDamageGlide"],
         default: "FakeBlock"
     }),
     cancelModeValue: cancelMode = Setting.list({
@@ -1152,6 +1165,7 @@ script.registerModule({
     settings: MatrixFlyValues,
 }, function (module) {
     module.on("enable", function () {
+        testx = new BlockPos(mc.thePlayer)
         simulateStartY = mc.thePlayer.posY
         glideMotionTicks = 6
         glideTicks = 0
@@ -1308,10 +1322,16 @@ script.registerModule({
                         mc.thePlayer.motionY = -0.005
                     } else mc.thePlayer.motionY = -0.01
                 }
+                break;
+            case "BlinkDamageGlide":
+                if (mc.thePlayer.hurtTime > 0) wasDamaged = true
+                if (wasDamaged) {
+                    mc.thePlayer.motionY = -0.01
+                }
         }
     });
     module.on("move", function (e) {
-        !wasDamaged && flyMode.get() == "DamageGlide" && e.zeroXZ();
+        !wasDamaged && (flyMode.get() == "DamageGlide" || flyMode.get() == "BlinkDamageGlide") && e.zeroXZ();
     })
     module.on("packet", function (e) {
         var packet = e.getPacket()
@@ -1333,6 +1353,7 @@ script.registerModule({
         if (flyMode.get() == "TNTBlink" && tntFly) {
             BlinkUtils.blink(packet, e, true, true)
         }
+        if (flyMode.get() == "BlinkDamageGlide" && wasDamaged) BlinkUtils.blink(packet, e, true, true);
     });
     module.on("render2D", function () {
         if (!renderAirTime.get() || flyMode.get() != "CancelC04" || cancelMode.get() != "Normal" || !canRecieveFallDMG() || mc.thePlayer.onGround) return;
@@ -1356,11 +1377,11 @@ script.registerModule({
         Gui.drawRect(screenWidth / 2 - 137, screenHeight / 2 + 65, screenWidth / 2 - 13 + 124 * renderDMG - 124, screenHeight / 2 + 70, Color.HSBtoRGB(renderDMG / 5, 1.0, 1.0) | 0xFF0000);
     })
     module.on("world", function () {
-        if (flyMode.get() == "S08SimulateSetback") ModuleManager.getModule("MatrixFly").setState(false) //prevent infinite loading screen
+        if (flyMode.get() == "S08SimulateSetback") ModuleManager.getModule("MatrixFly").setState(false)
     })
     module.on("disable", function () {
         lastPlaced && mc.theWorld.setBlockToAir(lastPlaced);
-        mc.thePlayer.fallDistance = totalFallDist //allow NoFall MLG to catch fall
+        ModuleManager.getModule("NoFall").getState() && (mc.thePlayer.fallDistance = totalFallDist) //allow NoFall MLG to catch fall
         mc.timer.timerSpeed = 1;
         tryBoost = 0;
         wasRiding = false
@@ -1425,7 +1446,7 @@ function isButtonPressed() {
 }
 
 function hasArrived() {
-    return (mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ() || getDist(destinationPos, new BlockPos(mc.thePlayer)) <= 3) && !ModuleManager.getModule("FreeCam").getState()
+    return (mc.thePlayer.posX == destinationPos.getX() && mc.thePlayer.posZ == destinationPos.getZ() || getDist(destinationPos, new BlockPos(mc.thePlayer)) <= 2) && !ModuleManager.getModule("FreeCam").getState();
 }
 
 function drawDestinationBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //GuiInventory.drawEntityOnScreen() only takes instanceof EntityLiving; this is a bit cheap ngl, but easy
@@ -1701,18 +1722,17 @@ MatrixUtilityValues = {
         default: false,
         isSupported: function() combatStrafe.get()
     }),
-    activationModeValue: activationMode = Setting.list({
-        name: "ActivationMode",
-        values: ["KillAuraRange", "Combat"],
-        default: "KillAuraRange",
-        isSupported: function () combatStrafe.get()
-    }),
     combatStrafeSpeedValue: combatStrafeSpeed = Setting.float({
         name: "StrafeSpeed",
         min: 0.01,
         max: 0.22,
         default: 0.22,
         isSupported: function() combatStrafe.get()
+    }),
+    glideWhenHurtValue: glideWhenHurt = Setting.boolean({
+        name: "GlideWhenHurt",
+        default: false,
+        isSupported: function () combatStrafe.get()
     }),
     spacerid83297Value: spacerid83297 = Setting.boolean({
         name: "",
@@ -1779,6 +1799,15 @@ function isPlayerBot(entity) {
     });
 }
 
+function shouldStrafe(e) {
+    var StrafeModule = ModuleManager.getModule("Strafe"), KillAuraModule = ModuleManager.getModule("KillAura"),
+        strafeStrengthValue = StrafeModule.getValue("Strength").get(), killAuraRangeValue = KillAuraModule.getValue("Range").get(),
+        target = e.getTargetEntity();
+
+    if (StrafeModule.getState() && strafeStrengthValue >= combatStrafeSpeed.get()) return false;
+    return PlayerExtensionKt.getDistanceToEntityBox(target, mc.thePlayer) <= killAuraRangeValue && entityIsMoving(mc.thePlayer)
+}
+ 
 script.registerModule({
     name: "MatrixUtility",
     category: "Fun",
@@ -1786,17 +1815,6 @@ script.registerModule({
     settings: MatrixUtilityValues,
 }, function (module) {
     module.on("update", function () {
-        var StrafeModule = ModuleManager.getModule("Strafe"), KillAuraModule = ModuleManager.getModule("KillAura"), SprintModule = ModuleManager.getModule("Sprint"), strafeStrengthValue = StrafeModule.getValue("Strength").get(), killAuraRangeValue = KillAuraModule.getValue("Range").get();
-
-        if (combatStrafe.get()) SprintModule.setState(true);
-
-        if (activationMode.get() == "KillAuraRange" && combatStrafe.get() &&
-            (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) &&
-            getTargetsInRange(killAuraRangeValue, EntityPlayer).length && entityIsMoving(mc.thePlayer)) {
-            MovementUtils.strafe(combatStrafeSpeed.get())
-            if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
-        }
-
         if (returnLastPos.get()) {
             if (mc.thePlayer.onGround) returnToLastOnGroundPos = new BlockPos(mc.thePlayer).down(1)
             if (mc.thePlayer.isSpectator() && returnToLastOnGroundPos) {
@@ -1862,13 +1880,16 @@ script.registerModule({
         }
     })
     module.on("attack", function (e) {
-        var target = e.getTargetEntity(), StrafeModule = ModuleManager.getModule("Strafe"), KillAuraModule = ModuleManager.getModule("KillAura"), strafeStrengthValue = StrafeModule.getValue("Strength").get(), killAuraRangeValue = KillAuraModule.getValue("Range").get();
-        if (target && activationMode.get() == "Combat" && combatStrafe.get()
-            && (StrafeModule.getState() ? strafeStrengthValue <= combatStrafeSpeed.get() : true) &&
-            PlayerExtensionKt.getDistanceToEntityBox(target, mc.thePlayer) <= killAuraRangeValue &&
-            entityIsMoving(mc.thePlayer)) {
-                MovementUtils.strafe(combatStrafeSpeed.get());
-                if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
+        if (shouldStrafe(e) && combatStrafe.get()) {
+            if (mc.thePlayer.onGround && autoJump.get()) mc.thePlayer.jump();
+            MovementUtils.strafe(combatStrafeSpeed.get());
+            if (glideWhenHurt.get()) {
+                if (mc.thePlayer.hurtTime > 0) strafeGlideTicks += 5;
+                if (strafeGlideTicks > 0 && !mc.thePlayer.onGround && mc.thePlayer.fallDistance >= 0.1) {
+                    strafeGlideTicks--
+                    mc.thePlayer.motionY = -0.01
+                }
+            }
         }
     })
     module.on("render3D", function () {
