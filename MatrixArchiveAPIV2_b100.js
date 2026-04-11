@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.6",
+    version: "1.0.7",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -787,6 +787,7 @@ script.registerModule({
                     sendInsult(target)
                     lastKillMessage = serverContentArray
                 } else if (sentInsult) {
+                    sinceLastPacket.reset()
                     if (serverChatContent.contains(formattedInsult) || similarToInsult(serverChatContent)) {
                         if (sentLink) {
                             if (hyperLink.get() && !packet.getChatComponent().getChatStyle().getChatClickEvent()) {
@@ -797,11 +798,11 @@ script.registerModule({
                         }
                         sentInsult = false
                     }
-                    packetsListened += 1;
+                    packetsListened++
                 }
             }
         }
-        if (sentInsult && (sinceLastPacket.hasTimePassed(100) && packetsListened > 0 || packetsListened >= 10)) {
+        if (sentInsult && (sinceLastPacket.hasTimePassed(500) && packetsListened > 0 || packetsListened >= 10)) {
             if (useQueue.get() && !sendQueue.includes(lastTarget) && lastQueueTarget != lastTarget) {
                 sendQueue.push(lastTarget)
                 queueTimer.reset()
@@ -810,7 +811,7 @@ script.registerModule({
     });
     module.on("attack", function(e) {
         if (e.getTargetEntity() instanceof EntityPlayer) {
-            currentTarget = e.getTargetEntity();
+            currentTarget = e.getTargetEntity()
         }
     });
     module.on("world", function () {
