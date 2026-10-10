@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.9",
+    version: "1.0.1",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -1125,7 +1125,7 @@ script.registerModule({
                 if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
                     sendInsult(target)
 
-                    if (!targetLog.length || !targetLog.flat().includes(target)) {
+                    if (!targetLog.length || !targetLog.some(function (comp) comp.name == target)) {
                         targetLog.push(
                             {
                                 name: target,
