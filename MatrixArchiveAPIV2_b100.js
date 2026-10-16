@@ -38,6 +38,7 @@ S27PacketExplosion = Java.type("net.minecraft.network.play.server.S27PacketExplo
 S41PacketServerDifficulty = Java.type("net.minecraft.network.play.server.S41PacketServerDifficulty")
 S00PacketServerInfo = Java.type("net.minecraft.network.status.server.S00PacketServerInfo")
 C02PacketUseEntity = Java.type("net.minecraft.network.play.client.C02PacketUseEntity")
+S1BPacketEntityAttach = Java.type("net.minecraft.network.play.server.S1BPacketEntityAttach")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
 EntityTNTPrimed = Java.type("net.minecraft.entity.item.EntityTNTPrimed")
 File = Java.type("java.io.File")
@@ -395,7 +396,7 @@ var totalFallDist = 0, cancelC04 = false, boosted = false, tryBoost = 0, simulat
 var renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
     destinationPos = null, sentPackets = 0, lookingAtBlock = null, lookingAtEntity = null,
     tpWaitTimer = new MSTimer(), tpWait = false, dynamicScale2 = 0, finalPackets = 0, oldLookPos = null,
-    deltaTP = null;
+    deltaTP = null, listenedS08Packets = 0, timeStampLastS08 = 0;
 
 /*----------------*/
 /* MATRIX UTILITY */
@@ -488,7 +489,7 @@ AutoInsultValues = {
                 }
             }
         },
-        isSupported: function() header1.get() && detectionMode.get() == "PacketChat"
+        isSupported: function () header1.get() && detectionMode.get() == "PacketChat" && ModuleManager.getModule("AutoInsultReloaded").getState()
     }),
     smartTargetIndexValue: smartTargetIndex = Setting.boolean({
         name: "SmartTargetIndex",
@@ -543,7 +544,7 @@ AutoInsultValues = {
                 selectingPhrase = false
             }
         },
-        isSupported: function () detectionMode.get() == "PacketChat" && header1.get() && !smartTargetIndex.get()
+        isSupported: function () detectionMode.get() == "PacketChat" && header1.get() && !smartTargetIndex.get() && ModuleManager.getModule("AutoInsultReloaded").getState()
     }),
     spacerValue2: spacer2 = Setting.boolean({
         name: "",
@@ -714,10 +715,17 @@ AutoInsultValues = {
     }),
     packetsToListenValue: packetsToListen = Setting.integer({
         name: "MinPacketsToListen",
-        min: 10,
+        min: 1,
         max: 50,
         default: 10,
         isSupported: function () header4.get() && useQueue.get()
+    }),
+    insultTimeoutValue: insultTimeout = Setting.integer({
+        name: "TimeoutAfter[ms]",
+        min: 100,
+        max: 5000,
+        default: 500,
+        isSupported: function() header4.get() && useQueue.get()
     })
 };
 
@@ -1153,7 +1161,7 @@ script.registerModule({
                     }
                     targetLog.splice(i, 1)
                 } else {
-                    if (comp.packetsLeft <= 0 || System.currentTimeMillis() - comp.timeStamp >= 500) {
+                    if (comp.packetsLeft <= 0) {
                         if (lastQueueTarget != comp.name && useQueue.get()) {
                             if (!sendQueue.length)
                                 queueTimer.reset();
@@ -1166,6 +1174,12 @@ script.registerModule({
                 }
             }
         }
+        if (targetLog.length) {
+            for (var i = 0; i < targetLog.length; i++) {
+                if (System.currentTimeMillis() - targetLog[i].timeStamp >= sendQueue.get() ? insultTimeout.get() : 500)
+                    targetLog.splice(i, 1);
+            }
+        }
     });
     module.on("attack", function(e) {
         if (e.getTargetEntity() instanceof EntityPlayer) {
@@ -1173,13 +1187,18 @@ script.registerModule({
         }
     });
     module.on("world", function () {
+        ModuleManager.getModule("AutoInsultReloaded").setState(false)
+    })
+    module.on("disable", function () {
         targetLog = []
         sendQueue = []
         currentTarget = null
         selectingPhrase = false
 
-        setValue(customIndex, false)
-        setValue(chatPhraseBuilder, false)
+        if (customIndex.get())
+            setValue(customIndex, false);
+        if (chatPhraseBuilder.get())
+            setValue(chatPhraseBuilder, false);
     })
     module.on("update", function () {
         module.tag = detectionMode.get()
@@ -2175,6 +2194,27 @@ script.registerModule({
         if (isButtonPressed() && !destinationPos) {
             destinationPos = lookPos
 
+            var altPos = [] 
+
+            if (
+                isPassable(destinationPos) ||
+                !isPassable(destinationPos.up(1)) ||
+                !isPassable(destinationPos.up(2))
+            ) {
+                for (var x = 0; x <= 6; x++) {
+                    for (var y = 0; y <= 6; y++) {
+                        for (var z = 0; z <= 6; z++) {
+                            var pos = new BlockPos(destinationPos.getX() + x, destinationPos.getY() + y, destinationPos.getZ() + z)
+                            if (isPassable(pos) || !isPassable(pos.up(2)) || !isPassable(pos.up(1)))
+                                continue;
+                                    altPos.push(pos)
+                        }
+                    }
+                }
+                if (altPos.length)
+                    destinationPos = altPos.sort(function (a, b) getDist(a, destinationPos) - getDist(b, destinationPos))[0];
+            }
+
             renderSelected = true
 
             dynamicScale2 = 0
@@ -2209,8 +2249,6 @@ script.registerModule({
                         }
                     }
                 } else {
-                    ModuleManager.getModule("MatrixClickTP").setState(false)
-
                     addMessage("")
                     addMessage(prefix + "Please §c§lride an entity§7 while §c§lselecting!")
                     addMessage("")
@@ -2218,6 +2256,8 @@ script.registerModule({
                     if (playSounds.get()) {
                         playSound("random.break")
                     }
+
+                    ModuleManager.getModule("MatrixClickTP").setState(false)
                     return
                 }
             }
@@ -2328,7 +2368,6 @@ script.registerModule({
                 packet.getX() == destinationPos.getX() && packet.getX() == destinationPos.getZ() ||
                 getDist(new BlockPos(packet.getX(), packet.getY(), packet.getZ()), destinationPos) <= 2
             ) {
-
                 finalPackets += sentPackets
 
                 addMessage("")
@@ -2341,19 +2380,18 @@ script.registerModule({
                 MatrixTeleportModule.setState(false)
                 return
             }
-            if (clickTpMode.get() == "CyclePackets" && !mc.thePlayer.isRiding()) {
+        }
+        if (clickTpMode.get() == "CyclePackets" && (sentPackets > 0 || finalPackets > 0) && packet instanceof C04PacketPlayerPosition && getDist(new BlockPos(packet.getX(), packet.getY(), packet.getZ()), destinationPos) > 2) { //supposed to fix a weird desync bug, where early dismount does not get detected!
+            addMessage("")
+            addMessage(prefix + "§c§lCanceled Teleport!")
+            addMessage(prefix + "Dismounted too early!")
+            addMessage("")
 
-                addMessage("")
-                addMessage(prefix + "§c§lCanceled Teleport!")
-                addMessage(prefix + "Dismounted too early!")
-                addMessage("")
+            playSounds.get() &&
+                playSound("random.break");
 
-                playSounds.get() &&
-                    playSound("random.break");
-
-                MatrixTeleportModule.setState(false)
-                return
-            }
+            MatrixTeleportModule.setState(false)
+            return
         }
         if (sentPackets >= maxPackets.get()) {
             if (clickTpMode.get() == "PacketSpam" || cycleMode.get() == "Consistent") {
@@ -2436,9 +2474,9 @@ script.registerModule({
                             packet.getZ(),
                             packet.getYaw(),
                             packet.getPitch(),
-                            false
+                            true
                         ),
-                        false
+                        true
                     )
                     sentPackets++
                     e.cancelEvent()
@@ -2484,6 +2522,8 @@ script.registerModule({
         mc.timer.timerSpeed = 1
         sentPackets = 0
         finalPackets = 0
+        timeStampLastS08 = 0
+        listenedS08Packets = 0
 
         ModuleManager.getModule("FreeCam").setState(false)
     })
