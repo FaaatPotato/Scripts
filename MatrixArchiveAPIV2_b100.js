@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.0.1",
+    version: "1.1.2",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -38,15 +38,21 @@ S27PacketExplosion = Java.type("net.minecraft.network.play.server.S27PacketExplo
 S41PacketServerDifficulty = Java.type("net.minecraft.network.play.server.S41PacketServerDifficulty")
 S00PacketServerInfo = Java.type("net.minecraft.network.status.server.S00PacketServerInfo")
 C02PacketUseEntity = Java.type("net.minecraft.network.play.client.C02PacketUseEntity")
-S1BPacketEntityAttach = Java.type("net.minecraft.network.play.server.S1BPacketEntityAttach")
+C0CPacketInput = Java.type("net.minecraft.network.play.client.C0CPacketInput")
 EntityPlayer = Java.type("net.minecraft.entity.player.EntityPlayer")
 EntityTNTPrimed = Java.type("net.minecraft.entity.item.EntityTNTPrimed")
+EntityHorse = Java.type("net.minecraft.entity.passive.EntityHorse")
+EntityPig = Java.type("net.minecraft.entity.passive.EntityPig")
+EntityBoat = Java.type("net.minecraft.entity.item.EntityBoat")
+EntityOtherPlayerMP = Java.type("net.minecraft.client.entity.EntityOtherPlayerMP")
+EntityMinecart = Java.type("net.minecraft.entity.item.EntityMinecart")
+EntityMinecartEmpty = Java.type("net.minecraft.entity.item.EntityMinecartEmpty")
 File = Java.type("java.io.File")
-FileManager = Java.type("net.ccbluex.liquidbounce.file.FileManager").INSTANCE;
+FileManager = Java.type("net.ccbluex.liquidbounce.file.FileManager").INSTANCE
 FileUtils = org.apache.commons.io.FileUtils;
-MSTimer = Java.type("net.ccbluex.liquidbounce.utils.timing.MSTimer");
+MSTimer = Java.type("net.ccbluex.liquidbounce.utils.timing.MSTimer")
 Timer = java.util.Timer;
-StandardCharsets = Java.type("java.nio.charset.StandardCharsets");
+StandardCharsets = Java.type("java.nio.charset.StandardCharsets")
 BlockPos = Java.type("net.minecraft.util.BlockPos")
 Block = Java.type("net.minecraft.block.Block")
 Blocks = Java.type("net.minecraft.init.Blocks")
@@ -62,6 +68,7 @@ RenderHelper = Java.type("net.minecraft.client.renderer.RenderHelper")
 Fonts = Java.type("net.ccbluex.liquidbounce.ui.font.Fonts").INSTANCE
 BlockUtils = Java.type("net.ccbluex.liquidbounce.utils.block.BlockUtils")
 ModuleManager = Java.type("net.ccbluex.liquidbounce.features.module.ModuleManager").INSTANCE
+ScriptManager = Java.type("net.ccbluex.liquidbounce.script.ScriptManager").INSTANCE
 MovementUtils = Java.type("net.ccbluex.liquidbounce.utils.movement.MovementUtils").INSTANCE
 BlockUtils = Java.type("net.ccbluex.liquidbounce.utils.block.BlockUtils").INSTANCE
 RenderUtils = Java.type("net.ccbluex.liquidbounce.utils.render.RenderUtils").INSTANCE
@@ -76,6 +83,7 @@ DamageSource = Java.type("net.minecraft.util.DamageSource")
 Vec3 = Java.type("net.minecraft.util.Vec3")
 BlockSnow = Java.type("net.minecraft.block.BlockSnow")
 BlockLiquid = Java.type("net.minecraft.block.BlockLiquid")
+EntityFireball = Java.type("net.minecraft.entity.projectile.EntityFireball")
 GuiInventory = Java.type("net.minecraft.client.gui.inventory.GuiInventory")
 ScaledResolution = Java.type("net.minecraft.client.gui.ScaledResolution")
 GlStateManager = Java.type("net.minecraft.client.renderer.GlStateManager")
@@ -106,11 +114,9 @@ URI = java.net.URI
 /* GLOBAL FUNCTIONS */
 /*------------------*/
 
-//time to mention Core.lib (the goat); I bow before this piece of code and want to highlight @CzechHek who made this library
-//extremely clean, efficient and beginner friendly
+//please consider checking this library out
 //https://github.com/CzechHek/Core/blob/master/Core.lib
-
-//the following functions are partly out of Core.lib
+//some of the following functions are ported from Core.lib
 
 Object.defineProperty(Array.prototype, "unique", {
     writable: true,
@@ -373,7 +379,7 @@ var currentTarget = null,
         ":skull:"
     ], queueTimer = new MSTimer(), sendQueue = [], targetLog = [], lastQueueTarget = null,
     cIndex = null, formattedInsult = "", potKillMessages = [], selectedParts = [],
-    selectedKillMessage = [], builderErrorText;
+    selectedKillMessage = [], actionValuePipe = "";
 
 /*---------------*/
 /* MATRIX FUCKER */
@@ -396,7 +402,7 @@ var totalFallDist = 0, cancelC04 = false, boosted = false, tryBoost = 0, simulat
 var renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
     destinationPos = null, sentPackets = 0, lookingAtBlock = null, lookingAtEntity = null,
     tpWaitTimer = new MSTimer(), tpWait = false, dynamicScale2 = 0, finalPackets = 0, oldLookPos = null,
-    deltaTP = null, listenedS08Packets = 0, timeStampLastS08 = 0;
+    deltaTP = null, confirmPositionTicks = 0;
 
 /*----------------*/
 /* MATRIX UTILITY */
@@ -476,17 +482,20 @@ AutoInsultValues = {
                 addMessage(prefix)
                 addMessage(
                     prefix + "§c§l[CANCEL]",
-                    ["clickEvent", "#b_a_cancel", "RUN_COMMAND"],
+                    ["clickEvent", "#b_cancel", "RUN_COMMAND"],
                     ["hoverEvent", "§cClick to cancel this process!"]
                 )
             } else {
                 clearChat()
+                if (actionValuePipe != "any_finalize") {
+                    playSound("random.break")
+                    actionValuePipe.length &&
+                        addMessage(prefix + actionValuePipe);
+                    actionValuePipe = ""
+                    addMessage(prefix + "§c§lCanceled!")
+                }
                 selectedParts = []
                 selectedKillMessage = []
-                if (builderErrorText) {
-                    addMessage(prefix + builderErrorText)
-                    builderErrorText = null
-                }
             }
         },
         isSupported: function () header1.get() && detectionMode.get() == "PacketChat" && ModuleManager.getModule("AutoInsultReloaded").getState()
@@ -511,19 +520,13 @@ AutoInsultValues = {
                     for each(var part in lastKillMessage) {
                         var text = ""
                         Java.from(mc.getNetHandler().getPlayerInfoMap())
-                            .map(function (info) info = info.getGameProfile().getName())
-                            .find(function (n) n === part) &&
-                                (text = (function () {
-                                    var playerList = mc.theWorld.playerEntities
-                                    for (var i = 0; i < playerList.length; i++) {
-                                        var player = playerList[i]
-                                        if (player.getName() === part) {
-                                            return player == mc.thePlayer ?
-                                                "\nNote that this is your own player name!" :
-                                                "\n§a§lOpponent player name"
-                                        }
-                                    }
-                                })() || "")
+                            .map(function (i) i.getGameProfile().getName())
+                            .some(function (n) n == part)
+                            && (
+                                text = part == mc.thePlayer.getName() ? 
+                                    "\nNote that this is your own player name!" :
+                                    "\n§a§lOpponent player name"
+                            );
                         addMessage(
                             prefix + part,
                             ["clickEvent", part, "RUN_COMMAND"],
@@ -636,7 +639,7 @@ AutoInsultValues = {
         isSupported: function () linkFormat.get() == "ReplaceDots" && header3.get()
     }),
     hyperLinkValue: hyperLink = Setting.boolean({
-        name: "Hyperlink",
+        name: "AddFakeHyperlink",
         default: true,
         isSupported: function () header3.get()
     }),
@@ -645,15 +648,33 @@ AutoInsultValues = {
         default: false,
         isSupported: function () header3.get()
     }),
-    useCustomLettersValue: useCustomLetters = Setting.boolean({
-        name: "CustomAlphabet",
-        default: false,
+    avoidChatFiltersValue: avoidChatFilters = Setting.boolean({
+        name: "AvoidChatFilters",
+        default: true,
         isSupported: function () header3.get()
     }),
-    ignoreLinkValue: ignoreLink = Setting.boolean({
-        name: "IgnoreLink",
+    addInvisibleSignsValue: addInvisibleSigns = Setting.boolean({
+        name: "AddInvisibleSigns",
         default: false,
-        isSupported: function () header3.get() && useCustomLetters.get()
+        isSupported: function () header3.get() && avoidChatFilters.get()
+    }),
+    invisibleIntervalModeValue: invisibleIntervalMode = Setting.list({
+        name: "Frequency",
+        values: ["Random", "FixedInterval"],
+        default: "Random",
+        isSupported: function() header3.get() && avoidChatFilters.get() && addInvisibleSigns.get()
+    }),
+    invisibleIntervalValue: invisibleInterval = Setting.integer({
+        name: "Every[x]Letters",
+        min: 1,
+        max: 10,
+        default: 2,
+        isSupported: function() header3.get() && avoidChatFilters.get() && addInvisibleSigns.get() && invisibleIntervalMode.get() == "FixedInterval"
+    }),
+    useCustomLettersValue: useCustomLetters = Setting.boolean({
+        name: "UseCustomLetters",
+        default: false,
+        isSupported: function () header3.get() && avoidChatFilters.get()
     }),
     customLettersValue: customLetters = Setting.list({
         name: "SelectSet",
@@ -672,7 +693,7 @@ AutoInsultValues = {
                 timeout(1, (function() setValue(customLetters, customA[0])))
             }
         },
-        isSupported: function() header3.get() && useCustomLetters.get()
+        isSupported: function() header3.get() && avoidChatFilters.get() && useCustomLetters.get()
     }),
     openCustomLettersValue: openCustomLetters = Setting.boolean({
         name: "OpenFile",
@@ -684,7 +705,12 @@ AutoInsultValues = {
             }
             timeout(1, (function () setValue(openCustomLetters, false)));
         },
-        isSupported: function () header3.get() && useCustomLetters.get()
+        isSupported: function () header3.get() && useCustomLetters.get() && avoidChatFilters.get()
+    }),
+    ignoreLinkValue: ignoreLink = Setting.boolean({
+        name: "IgnoreLink",
+        default: false,
+        isSupported: function () header3.get() && avoidChatFilters.get() && (addInvisibleSigns.get() || useCustomLetters.get())
     }),
     spacerValue4: spacer4 = Setting.boolean({
         name: "",
@@ -714,7 +740,7 @@ AutoInsultValues = {
         isSupported: function () header4.get() && useQueue.get()
     }),
     packetsToListenValue: packetsToListen = Setting.integer({
-        name: "MinPacketsToListen",
+        name: "MaxPacketsToListen",
         min: 1,
         max: 50,
         default: 10,
@@ -740,8 +766,9 @@ function containsLink(message) (function () { try { return !!URI.create(message)
 
 function extractLinks(message) message.split(" ").filter(function (part) containsLink(part));
 
-function shouldReplaceLetter(atI, message) {
-    if (!ignoreLink.get()) return true;
+function allowEditForChar(atI, message) {
+    if (!ignoreLink.get())
+        return true;
 
     var splitMessage = message.split(" ")
 
@@ -761,12 +788,11 @@ function sendInsult(targetName) {
             Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) :
             null;
 
-    formattedInsult = ""
-    replacedInsult = ""
-
     insult = insultMode.get() == "Internal" || userContent == null ?
         internalInsults.random() :
         userContent.random();
+
+    formattedInsult = ""
 
     if (!containsLink(insult)) formattedInsult = insult; else {
         var splitInsult = insult.split(" "),
@@ -788,26 +814,48 @@ function sendInsult(targetName) {
         formattedInsult = splitInsult.join(" ")
     }
 
-    if (useCustomLetters.get()) {
+    var replacedInsult = ""
+
+    if (avoidChatFilters.get()) {
         var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())],
             alphabet = "abcdefghijklmnopqrstuvwxyz";
 
-        for (i = 0; i < formattedInsult.length; i++) {
+        //thank you fellow forum poster: https://hypixel.net/threads/remove-invisible-characters-from-chat-to-prevent-spam-scam-bots.4423025/
+        var invisibleChars = ["⛓", "֏", "⭍", "⛬", "⛫", "⛭", "⛮", "⛶", "⛘", "⛐", "⛩", "⛠", "⛋", "⛟", "⛉", "⛍", "⛗", "⛜", "⛡", "⛌", "⛏", "⏺"],
+            potTotalLength = formattedInsult.length + Math.floor(formattedInsult.length / invisibleInterval.get()),
+            invisibleIndex = invisibleIntervalMode.get() == "Random" || potTotalLength > 100 ? 
+                Math.floor(Math.random() * 4) + 1 :
+                invisibleInterval.get();
+
+        for (var i = 0; i < formattedInsult.length; i++) {
             var letter = formattedInsult[i].toLowerCase(),
                 letterIndex = alphabet.indexOf(letter);
 
-            if (letterIndex !== -1 && shouldReplaceLetter(i, formattedInsult)) {
-                replacedInsult += customAlphabet[letterIndex]
-            } else replacedInsult += formattedInsult[i];
+            if (allowEditForChar(i, formattedInsult)) {
+                if (useCustomLetters.get()) {
+                    if (letterIndex !== -1) {
+                        replacedInsult += customAlphabet[letterIndex]
+                    }
+                }
+                if (addInvisibleSigns.get()) {
+                    if (i === invisibleIndex) {
+                        replacedInsult += invisibleChars.random()
+                        invisibleIndex = invisibleIntervalMode.get() == "Random" ? i + Math.floor(Math.random() * 5) + 2 : invisibleIndex + invisibleInterval.get()
+                    }
+                }
+                if (addInvisibleSigns.get() && !useCustomLetters.get() || letterIndex === -1 && !invisibleChars.includes(letter)) {
+                    replacedInsult += formattedInsult[i]
+                }
+            }
         }
-        formattedInsult = replacedInsult
+        if (replacedInsult.length) {
+            formattedInsult = replacedInsult
+        }
     }
-
     mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + formattedInsult)
 }
 
 //implementation of https://www.youtube.com/watch?v=Dd_NgYVOdLk
-//amazing video on this algorithm
 
 function getEditingDistance(strA, strB) {
     var matrix = [], cols = strA.length + 1, rows = strB.length + 1;
@@ -875,12 +923,11 @@ script.registerModule({
                         "#b_a_fin",
                         "#b_a_add_ex",
                         "#b_a_rep_ex",
-                        "#b_a_cancel",
                         "#builder_tree_remove",
                         "#b_r_add_p",
                         "#b_r_undo",
                         "#b_r_fin",
-                        "#b_r_cancel"
+                        "#b_cancel"
                     ].find(function (action) clientChatContent.contains(action))
                 ) {
                     case "#builder_tree_add":
@@ -889,8 +936,8 @@ script.registerModule({
                         clearChat()
 
                         if (!potKillMessages.length) {
-                            builderErrorText = "No messages to add from!"
-                            return mc.thePlayer.sendChatMessage("#b_a_cancel");
+                            actionValuePipe = "No messages to add from!\n" + prefix + "Please kill §c§lenemy players§7 first!"
+                            return mc.thePlayer.sendChatMessage("#b_cancel");
                         }
 
                         for (var i = 0; i < potKillMessages.length; i++) {
@@ -910,6 +957,7 @@ script.registerModule({
                             var temp = clientChatContent.split(" ")
                             temp.splice(0, 1)
                             selectedKillMessage = temp
+                            playSound("random.orb")
                         }
 
                         for (var i = 0; i < selectedKillMessage.length; i++) {
@@ -936,7 +984,7 @@ script.registerModule({
                         )
                         addMessage(
                             prefix + "§c§l[CANCEL]",
-                            ["clickEvent", "#b_a_cancel", "RUN_COMMAND"],
+                            ["clickEvent", "#b_cancel", "RUN_COMMAND"],
                             ["hoverEvent", "§cClick to exit and cancel!"]
                         )
                         break;
@@ -945,6 +993,8 @@ script.registerModule({
                         temp.splice(0, 1)
                         selectedParts.push(temp)
 
+                        playSound("random.orb")
+
                         e.cancelEvent()
 
                         mc.thePlayer.sendChatMessage("#b_a_sel_m")
@@ -952,6 +1002,8 @@ script.registerModule({
                     case "#b_a_undo":
                         if (selectedParts.length)
                             selectedParts.pop();
+
+                        playSound("random.fizz")
 
                         e.cancelEvent()
 
@@ -978,12 +1030,16 @@ script.registerModule({
                         addMessage(prefix)
                         addMessage(
                             prefix + "§c§l[CANCEL]",
-                            ["clickEvent", "#b_a_cancel", "RUN_COMMAND"],
+                            ["clickEvent", "#b_cancel", "RUN_COMMAND"],
                             ["hoverEvent", "§cClick to cancel this process!"]
                         )
                         break;
                     case "#b_a_add_ex":
                         e.cancelEvent()
+
+                        actionValuePipe = "any_finalize"
+
+                        playSound("random.anvil_use")
 
                         setValue(detectionPhrase, detectionPhrase.get() + "," + selectedParts.join(" "))
 
@@ -996,6 +1052,10 @@ script.registerModule({
                     case "#b_a_rep_ex":
                         e.cancelEvent()
 
+                        actionValuePipe = "any_finalize"
+
+                        playSound("random.anvil_use")
+
                         setValue(detectionPhrase, selectedParts.join(" "))
 
                         clearChat()
@@ -1004,28 +1064,21 @@ script.registerModule({
 
                         addMessage(prefix + "§c§lReplaced!")
                         break;
-                    case "#b_a_cancel":
-                        e.cancelEvent()
-
-                        setValue(chatPhraseBuilder, false)
-
-                        addMessage(prefix + "§c§lCanceled!")
-                        break;
                     case "#builder_tree_remove":
                         e.cancelEvent()
 
                         clearChat()
 
                         if (!detectionPhrase.get().length) {
-                            builderErrorText = "No detection phrases to delete!"
-                            return mc.thePlayer.sendChatMessage("#b_r_cancel");
+                            actionValuePipe = "No detection phrases to delete!"
+                            return mc.thePlayer.sendChatMessage("#b_cancel");
                         }
 
                         var temp = detectionPhrase.get().split(",")
                         for (var i = 0; i < temp.length; i++) {
                             addMessage(
                                 prefix + temp[i],
-                                ["clickEvent", "#b_r_add_p " + temp[i] + "ㅤ", "RUN_COMMAND"], //really cheap but otherwise must reconstruct phrases or use another var and this would be inefficient or even uglier
+                                ["clickEvent", "#b_r_add_p " + temp[i] + "ㅤ", "RUN_COMMAND"], //use invisible sign to mark phrase start and end points while keeping them invisible
                                 ["hoverEvent", "§aClick to queue for deletion!"]
                             )
                         }
@@ -1045,7 +1098,7 @@ script.registerModule({
                         )
                         addMessage(
                             prefix + "§c§l[CANCEL]",
-                            ["clickEvent", "#b_r_cancel", "RUN_COMMAND"],
+                            ["clickEvent", "#b_cancel", "RUN_COMMAND"],
                             ["hoverEvent", "§cClick to cancel the process!"]
                         )
                         break;
@@ -1061,15 +1114,17 @@ script.registerModule({
 
                         for (var i = 0; i < temp.length; i++)
                             !selectedParts.includes(temp[i]) &&
-                                selectedParts.push(temp[i]);
+                                (selectedParts.push(temp[i]), playSound("random.orb"));
 
                         mc.thePlayer.sendChatMessage("#builder_tree_remove")
                         break;
                     case "#b_r_undo":
                         e.cancelEvent()
 
-                        if (selectedParts.length)
-                            selectedParts.pop();
+                        if (selectedParts.length) {
+                            selectedParts.pop()
+                            playSound("random.fizz")
+                        }
 
                         mc.thePlayer.sendChatMessage("#builder_tree_remove")
                         break;
@@ -1082,9 +1137,13 @@ script.registerModule({
                         var diff = detectionPhrase.get().split(",").filter(function (phrase) !selectedParts.includes(phrase)).join(",")
 
                         if (!diff.length) {
-                            builderErrorText = "You can not delete the last phrase!"
-                            return mc.thePlayer.sendChatMessage("#b_r_cancel")
+                            actionValuePipe = "You can not delete the last phrase!"
+                            return mc.thePlayer.sendChatMessage("#b_cancel")
                         }
+
+                        actionValuePipe = "any_finalize"
+
+                        playSound("random.anvil_use")
 
                         setValue(detectionPhrase, diff)
 
@@ -1092,12 +1151,10 @@ script.registerModule({
 
                         addMessage(prefix + "§c§lDeleted!")
                         break;
-                    case "#b_r_cancel":
+                    case "#b_cancel":
                         e.cancelEvent()
 
                         setValue(chatPhraseBuilder, false)
-
-                        addMessage(prefix + "§c§lCanceled!")
                         break;
                 }
             }
@@ -1106,7 +1163,7 @@ script.registerModule({
         if (packet instanceof S00PacketServerInfo) potKillMessages = [];
 
         if (packet instanceof S02PacketChat) {
-            if (detectionMode.get() == "PacketChat" && mc.theWorld) {
+            if (mc.theWorld) {
                 var serverChatContent = packet.getChatComponent().getUnformattedText(),
                     serverContentArray = serverChatContent.split(" "),
 
@@ -1131,7 +1188,8 @@ script.registerModule({
                     return e.cancelEvent();
 
                 if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
-                    sendInsult(target)
+                    if (detectionMode.get() == "PacketChat")
+                        sendInsult(target);
 
                     if (!targetLog.length || !targetLog.some(function (comp) comp.name == target)) {
                         targetLog.push(
@@ -1147,7 +1205,6 @@ script.registerModule({
                     lastKillMessage = serverContentArray
                 }
             }
-
             for (var i = 0; i < targetLog.length; i++) {
                 var comp = targetLog[i]
                 if (serverChatContent.contains(comp.insult) && serverChatContent.contains(comp.name) || similarTo(comp.insult, serverChatContent)) {
@@ -1162,10 +1219,11 @@ script.registerModule({
                     targetLog.splice(i, 1)
                 } else {
                     if (comp.packetsLeft <= 0) {
-                        if (lastQueueTarget != comp.name && useQueue.get()) {
-                            if (!sendQueue.length)
-                                queueTimer.reset();
-                            sendQueue.push(comp.name)
+                        if (useQueue.get()) {
+                            if (!sendQueue.length) queueTimer.reset();
+                            if (!sendQueue.includes(comp.name) && lastQueueTarget != comp.name) {
+                                sendQueue.push(targetName)
+                            }
                         }
                         targetLog.splice(i, 1)
                     } else {
@@ -1176,8 +1234,14 @@ script.registerModule({
         }
         if (targetLog.length) {
             for (var i = 0; i < targetLog.length; i++) {
-                if (System.currentTimeMillis() - targetLog[i].timeStamp >= sendQueue.get() ? insultTimeout.get() : 500)
-                    targetLog.splice(i, 1);
+                var comp = targetLog[i]
+                if (System.currentTimeMillis() - comp.timeStamp >= (useQueue.get() ? insultTimeout.get() : 500)) {
+                    if (!sendQueue.length) queueTimer.reset();
+                    if (!sendQueue.includes(comp.name) && lastQueueTarget != comp.name) {
+                        sendQueue.push(comp.name)
+                    }
+                    targetLog.splice(i, 1)
+                }
             }
         }
     });
@@ -1186,20 +1250,6 @@ script.registerModule({
             currentTarget = e.getTargetEntity()
         }
     });
-    module.on("world", function () {
-        ModuleManager.getModule("AutoInsultReloaded").setState(false)
-    })
-    module.on("disable", function () {
-        targetLog = []
-        sendQueue = []
-        currentTarget = null
-        selectingPhrase = false
-
-        if (customIndex.get())
-            setValue(customIndex, false);
-        if (chatPhraseBuilder.get())
-            setValue(chatPhraseBuilder, false);
-    })
     module.on("update", function () {
         module.tag = detectionMode.get()
 
@@ -1223,9 +1273,26 @@ script.registerModule({
                 mc.thePlayer
             ) {
                 sendInsult(currentTarget.getName())
-                return currentTarget = null;
+                currentTarget = null;
             }
         }
+    });
+    function clearValues() {
+        targetLog = []
+        sendQueue = []
+        currentTarget = null
+        selectingPhrase = false
+
+        if (customIndex.get())
+            setValue(customIndex, false);
+        if (chatPhraseBuilder.get())
+            setValue(chatPhraseBuilder, false);
+    }
+    module.on("world", function () {
+        clearValues()
+    })
+    module.on("disable", function () {
+        clearValues()
     })
 });
 
@@ -2085,6 +2152,9 @@ function drawBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //feel very free
         GlStateManager.scale(itemScale, itemScale, 1.0)
         GlStateManager.translate(-8.0, -8.0, 0.0)
 
+        if (block instanceof BlockRailBase)
+            stack.setItemDamage(0);
+
         if (block == Blocks.tripwire)
             stack = new ItemStack(Items.string);
 
@@ -2138,6 +2208,36 @@ function drawBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //feel very free
     mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture)
 }
 
+function isRiding() { //prevents issues with desync where dismount is not detected by mc.thePlayer.ridingEntity or mc.thePlayer.isRiding()
+    var ridingEntity = mc.thePlayer.ridingEntity
+
+    if (!ridingEntity)
+        return false;
+
+    var clazz = [EntityBoat, EntityHorse, EntityMinecartEmpty || EntityMinecart, EntityPig]
+        .find(function (c) c.class.isInstance(ridingEntity)) //prevents issue with EntityMinecart and EntityMinecartEmpty
+
+    if (!clazz)
+        return false;
+
+    if (ModuleManager.getModule("Freecam").getState())
+        return true;
+
+    if (Math.abs(mc.thePlayer.posY - ridingEntity.posY) > 3)
+        return true; //prevents issue with FreeCam false positive
+
+    var dummyMount = new clazz(mc.theWorld)
+    dummyMount.setPosition(ridingEntity.posX, ridingEntity.posY, ridingEntity.posZ)
+
+    var dummyPlayerRiding = new EntityOtherPlayerMP(mc.theWorld, mc.thePlayer.getGameProfile())
+    dummyPlayerRiding.setPosition(mc.thePlayer.posX, mc.thePlayer.posY, mc.thePlayer.posZ)
+
+    dummyPlayerRiding.mountEntity(dummyMount)
+    dummyPlayerRiding.updateRidden()
+
+    return Math.abs(mc.thePlayer.getPositionEyes(1.0).yCoord - dummyPlayerRiding.getPositionEyes(1.0).yCoord) < 0.001
+}
+
 function xTextOffset(str) {
     return mc.fontRendererObj.getStringWidth(str) / 2
 }
@@ -2152,6 +2252,8 @@ script.registerModule({
         sentPackets = 0
         finalPackets = 0
         tpWait = false
+        destinationPos = null
+        confirmPositionTicks = 0
     })
     module.on("render3D", function () {
         lookingAtBlock = mc.thePlayer.rayTrace(255, 1)
@@ -2191,36 +2293,13 @@ script.registerModule({
         if (!destinationPos && !lookPos)
             return;
 
+        var MatrixClickTPModule = ModuleManager.getModule("MatrixClickTP")
+
         if (isButtonPressed() && !destinationPos) {
             destinationPos = lookPos
 
-            var altPos = [] 
-
-            if (
-                isPassable(destinationPos) ||
-                !isPassable(destinationPos.up(1)) ||
-                !isPassable(destinationPos.up(2))
-            ) {
-                for (var x = 0; x <= 6; x++) {
-                    for (var y = 0; y <= 6; y++) {
-                        for (var z = 0; z <= 6; z++) {
-                            var pos = new BlockPos(destinationPos.getX() + x, destinationPos.getY() + y, destinationPos.getZ() + z)
-                            if (isPassable(pos) || !isPassable(pos.up(2)) || !isPassable(pos.up(1)))
-                                continue;
-                                    altPos.push(pos)
-                        }
-                    }
-                }
-                if (altPos.length)
-                    destinationPos = altPos.sort(function (a, b) getDist(a, destinationPos) - getDist(b, destinationPos))[0];
-            }
-
-            renderSelected = true
-
-            dynamicScale2 = 0
-
             if (getDist(new BlockPos(mc.thePlayer), destinationPos) <= 2 && !ModuleManager.getModule("FreeCam").getState()) {
-                ModuleManager.getModule("MatrixClickTP").setState(false)
+                MatrixClickTPModule.setState(false)
 
                 addMessage("")
                 addMessage(prefix + "Please select a position §c§lfarther§7 than §c§l2 blocks!")
@@ -2231,6 +2310,34 @@ script.registerModule({
                 }
                 return
             }
+
+            confirmPositionTicks = 10
+
+            var altPos = [] 
+
+            if (
+                isPassable(destinationPos) ||
+                !isPassable(destinationPos.up(1)) ||
+                !isPassable(destinationPos.up(2))
+            ) {
+                for (var x = 0; x <= 3; x++) {
+                    for (var y = 0; y <= 3; y++) {
+                        for (var z = 0; z <= 3; z++) {
+                            var pos = new BlockPos(destinationPos.getX() + x, destinationPos.getY() + y, destinationPos.getZ() + z)
+                            if (isPassable(pos) || !isPassable(pos.up(2)) || !isPassable(pos.up(1))) {
+                                continue
+                            }
+                            altPos.push(pos)
+                        }
+                    }
+                }
+                if (altPos.length)
+                    destinationPos = altPos.sort(function (a, b) getDist(a, destinationPos) - getDist(b, destinationPos))[0];
+            }
+
+            renderSelected = true
+
+            dynamicScale2 = 0
 
             if (clickTpMode.get() == "CyclePackets") {
                 if (mc.thePlayer.isRiding()) {
@@ -2257,7 +2364,7 @@ script.registerModule({
                         playSound("random.break")
                     }
 
-                    ModuleManager.getModule("MatrixClickTP").setState(false)
+                    MatrixClickTPModule.setState(false)
                     return
                 }
             }
@@ -2294,7 +2401,6 @@ script.registerModule({
             }
 
             dynamicScale2 = animate(15, dynamicScale2, 0.25)
-
             drawBlockOnScreen(lookPos, screenWidth / 2, screenHeight / 2 + 45, dynamicScale2, 45, 0)
 
             var displayText = []
@@ -2354,20 +2460,28 @@ script.registerModule({
         drawBlockOnScreen(destinationPos, screenWidth / 2, screenHeight / 2 + 40, dynamicScale2, (System.currentTimeMillis() / 10) % 360, 0)
 
         mcFont.drawString("§6attempting...", screenWidth / 2 - 25, screenHeight / 2 + 10, 0xFFFFFF)
-    })
-    module.on("packet", function (e) {
-        if (!destinationPos)
-            return;
-
-        var packet = e.getPacket()
 
         var MatrixTeleportModule = ModuleManager.getModule("MatrixClickTP")
 
-        if (packet instanceof S08PacketPlayerPosLook) {
-            if (
-                packet.getX() == destinationPos.getX() && packet.getX() == destinationPos.getZ() ||
-                getDist(new BlockPos(packet.getX(), packet.getY(), packet.getZ()), destinationPos) <= 2
-            ) {
+        if (!isRiding()) {
+            mc.timer.timerSpeed = 1
+
+            if (confirmPositionTicks-- > 0)
+                return;
+
+            if (getDist(new BlockPos(mc.thePlayer), destinationPos.up(1)) > 3) {
+                if (clickTpMode.get() == "CyclePackets") {
+                    addMessage("")
+                    addMessage(prefix + "§c§lCanceled Teleport!")
+                    addMessage(prefix + "Dismounted too early!")
+                    addMessage("")
+
+                    playSounds.get() &&
+                        playSound("random.break");
+
+                    MatrixTeleportModule.setState(false)
+                }
+            } else {
                 finalPackets += sentPackets
 
                 addMessage("")
@@ -2378,39 +2492,30 @@ script.registerModule({
                     playSound("mob.endermen.portal");
 
                 MatrixTeleportModule.setState(false)
-                return
             }
-        }
-        if (clickTpMode.get() == "CyclePackets" && (sentPackets > 0 || finalPackets > 0) && packet instanceof C04PacketPlayerPosition && getDist(new BlockPos(packet.getX(), packet.getY(), packet.getZ()), destinationPos) > 2) { //supposed to fix a weird desync bug, where early dismount does not get detected!
-            addMessage("")
-            addMessage(prefix + "§c§lCanceled Teleport!")
-            addMessage(prefix + "Dismounted too early!")
-            addMessage("")
+        } else if (sentPackets >= maxPackets.get()) {
+            finalPackets += sentPackets
+            sentPackets = 0
 
-            playSounds.get() &&
-                playSound("random.break");
-
-            MatrixTeleportModule.setState(false)
-            return
-        }
-        if (sentPackets >= maxPackets.get()) {
             if (clickTpMode.get() == "PacketSpam" || cycleMode.get() == "Consistent") {
-
-                finalPackets += sentPackets
-
                 addMessage(prefix + "Teleport failed!")
                 addMessage(prefix + "Sent §c§l" + finalPackets + " §7packets")
                 playSounds.get() &&
                     playSound("random.break");
 
-                return MatrixTeleportModule.setState(false)
+                MatrixTeleportModule.setState(false)
             } else if (cycleMode.get() == "AlternatePackets") {
                 tpWait = true
-                finalPackets += sentPackets
-                sentPackets = 0
                 tpWaitTimer.reset()
             }
         }
+    })
+    module.on("packet", function (e) {
+        var packet = e.getPacket()
+
+        if (!destinationPos || !isRiding())
+            return;
+
         if (mc.thePlayer.isRiding() && clickTpMode.get() == "CyclePackets") {
             if (cycleMode.get() == "AlternatePackets") {
                 if (packet instanceof S08PacketPlayerPosLook && !tpWait) {
@@ -2482,6 +2587,8 @@ script.registerModule({
                     e.cancelEvent()
                 }
             }
+            if (packet instanceof C0CPacketInput)
+                e.cancelEvent();
         }
     })
     module.on("update", function () {
@@ -2499,7 +2606,8 @@ script.registerModule({
         if (!destinationPos)
             return;
 
-        mc.timer.timerSpeed = tpTimer.get()
+        if (isRiding())
+            mc.timer.timerSpeed = tpTimer.get();
 
         if (clickTpMode.get() == "PacketSpam") {
             PacketUtils.sendPacket(
@@ -2522,8 +2630,6 @@ script.registerModule({
         mc.timer.timerSpeed = 1
         sentPackets = 0
         finalPackets = 0
-        timeStampLastS08 = 0
-        listenedS08Packets = 0
 
         ModuleManager.getModule("FreeCam").setState(false)
     })
@@ -2603,7 +2709,7 @@ script.registerModule({
 MatrixUtilityValues = {
     combatStrafeValue: combatStrafe = Setting.boolean({
         name: "CombatStrafe",
-        default: true
+        default: false
     }),
     autoJumpValue: autoJump = Setting.boolean({
         name: "AutoJump",
@@ -2653,7 +2759,7 @@ MatrixUtilityValues = {
     }),
     stepValue: step = Setting.boolean({
         name: "Step",
-        default: true
+        default: false
     }),
     stepPredictValue: stepPredict = Setting.float({
         name: "PredictSize",
