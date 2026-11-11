@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.1.2",
+    version: "1.1.3",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -402,7 +402,7 @@ var totalFallDist = 0, cancelC04 = false, boosted = false, tryBoost = 0, simulat
 var renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
     destinationPos = null, sentPackets = 0, lookingAtBlock = null, lookingAtEntity = null,
     tpWaitTimer = new MSTimer(), tpWait = false, dynamicScale2 = 0, finalPackets = 0, oldLookPos = null,
-    deltaTP = null, confirmPositionTicks = 0;
+    deltaTP = 200, confirmPositionTicks = 0;
 
 /*----------------*/
 /* MATRIX UTILITY */
@@ -653,23 +653,16 @@ AutoInsultValues = {
         default: true,
         isSupported: function () header3.get()
     }),
-    addInvisibleSignsValue: addInvisibleSigns = Setting.boolean({
-        name: "AddInvisibleSigns",
+    addInvisibleCharactersValue: addInvisibleCharacters = Setting.boolean({
+        name: "AddInvisibleCharacters",
         default: false,
         isSupported: function () header3.get() && avoidChatFilters.get()
     }),
     invisibleIntervalModeValue: invisibleIntervalMode = Setting.list({
         name: "Frequency",
-        values: ["Random", "FixedInterval"],
-        default: "Random",
-        isSupported: function() header3.get() && avoidChatFilters.get() && addInvisibleSigns.get()
-    }),
-    invisibleIntervalValue: invisibleInterval = Setting.integer({
-        name: "Every[x]Letters",
-        min: 1,
-        max: 10,
-        default: 2,
-        isSupported: function() header3.get() && avoidChatFilters.get() && addInvisibleSigns.get() && invisibleIntervalMode.get() == "FixedInterval"
+        values: ["AdjustToLength", "Random"],
+        default: "AdjustToLength",
+        isSupported: function() header3.get() && avoidChatFilters.get() && addInvisibleCharacters.get()
     }),
     useCustomLettersValue: useCustomLetters = Setting.boolean({
         name: "UseCustomLetters",
@@ -710,7 +703,7 @@ AutoInsultValues = {
     ignoreLinkValue: ignoreLink = Setting.boolean({
         name: "IgnoreLink",
         default: false,
-        isSupported: function () header3.get() && avoidChatFilters.get() && (addInvisibleSigns.get() || useCustomLetters.get())
+        isSupported: function () header3.get() && avoidChatFilters.get() && (addInvisibleCharacters.get() || useCustomLetters.get())
     }),
     spacerValue4: spacer4 = Setting.boolean({
         name: "",
@@ -783,6 +776,21 @@ function allowEditForChar(atI, message) {
     return true
 }
 
+function getOptimalInterval(insult, reservedSpace) {
+    if (insult.length + reservedSpace > 100)
+        return 0;
+
+    var potLength = 2 * insult.length,
+        i = 1;
+
+    while (potLength > 100 - reservedSpace) {
+        i++
+        potLength = insult.length + Math.floor(insult.length / i)
+    }
+
+    return i
+}
+
 function sendInsult(targetName) {
     var userContent = Java.from(insultDir.listFiles()).length && customFile.get() ?
             Java.from(FileUtils.readLines(new File(insultDir, customFile.get()), StandardCharsets.UTF_8)) :
@@ -822,10 +830,10 @@ function sendInsult(targetName) {
 
         //thank you fellow forum poster: https://hypixel.net/threads/remove-invisible-characters-from-chat-to-prevent-spam-scam-bots.4423025/
         var invisibleChars = ["⛓", "֏", "⭍", "⛬", "⛫", "⛭", "⛮", "⛶", "⛘", "⛐", "⛩", "⛠", "⛋", "⛟", "⛉", "⛍", "⛗", "⛜", "⛡", "⛌", "⛏", "⏺"],
-            potTotalLength = formattedInsult.length + Math.floor(formattedInsult.length / invisibleInterval.get()),
-            invisibleIndex = invisibleIntervalMode.get() == "Random" || potTotalLength > 100 ? 
-                Math.floor(Math.random() * 4) + 1 :
-                invisibleInterval.get();
+            optimalInterval = getOptimalInterval(formattedInsult, (chatPrefix.get() + " " + targetName + " ").length) //account for targetName and chat prefix etc...
+            invisibleIndex = invisibleIntervalMode.get() == "Random" ? 
+                Math.floor(Math.random() * 5) + 1 :
+                optimalInterval;
 
         for (var i = 0; i < formattedInsult.length; i++) {
             var letter = formattedInsult[i].toLowerCase(),
@@ -837,20 +845,21 @@ function sendInsult(targetName) {
                         replacedInsult += customAlphabet[letterIndex]
                     }
                 }
-                if (addInvisibleSigns.get()) {
+                if (addInvisibleCharacters.get() && invisibleIndex > 0) {
                     if (i === invisibleIndex) {
                         replacedInsult += invisibleChars.random()
-                        invisibleIndex = invisibleIntervalMode.get() == "Random" ? i + Math.floor(Math.random() * 5) + 2 : invisibleIndex + invisibleInterval.get()
+                        invisibleIndex = invisibleIntervalMode.get() == "Random" ?
+                            i + Math.floor(Math.random() * 5) + 1 :
+                            i + optimalInterval
                     }
                 }
-                if (addInvisibleSigns.get() && !useCustomLetters.get() || letterIndex === -1 && !invisibleChars.includes(letter)) {
+                if (letterIndex === -1 && !invisibleChars.includes(letter) && (useCustomLetters.get() || addInvisibleCharacters.get())) {
                     replacedInsult += formattedInsult[i]
                 }
             }
         }
-        if (replacedInsult.length) {
-            formattedInsult = replacedInsult
-        }
+        if (replacedInsult.length)
+            formattedInsult = replacedInsult;
     }
     mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + formattedInsult)
 }
@@ -947,6 +956,12 @@ script.registerModule({
                                 ["hoverEvent", "§aClick to inspect this message further!"]
                             )
                         }
+                        addMessage(prefix)
+                        addMessage(
+                            prefix + "§c§l[CANCEL]",
+                            ["clickEvent", "#b_cancel", "RUN_COMMAND"],
+                            ["hoverEvent", "§cClick to exit and cancel!"]
+                        )
                         break;
                     case "#b_a_sel_m":
                         e.cancelEvent()
@@ -2320,9 +2335,9 @@ script.registerModule({
                 !isPassable(destinationPos.up(1)) ||
                 !isPassable(destinationPos.up(2))
             ) {
-                for (var x = 0; x <= 3; x++) {
-                    for (var y = 0; y <= 3; y++) {
-                        for (var z = 0; z <= 3; z++) {
+                for (var x = -3; x <= 3; x++) {
+                    for (var y = -3; y <= 3; y++) {
+                        for (var z = -3; z <= 3; z++) {
                             var pos = new BlockPos(destinationPos.getX() + x, destinationPos.getY() + y, destinationPos.getZ() + z)
                             if (isPassable(pos) || !isPassable(pos.up(2)) || !isPassable(pos.up(1))) {
                                 continue
