@@ -109,6 +109,8 @@ PositionedSoundRecord = Java.type("net.minecraft.client.audio.PositionedSoundRec
 ResourceLocation = Java.type("net.minecraft.util.ResourceLocation")
 EnumParticleTypes = Java.type("net.minecraft.util.EnumParticleTypes")
 URI = java.net.URI
+Frustum = Java.type("net.minecraft.client.renderer.culling.Frustum");
+GL11 = Java.type("org.lwjgl.opengl.GL11");
 
 /*------------------*/
 /* GLOBAL FUNCTIONS */
@@ -306,41 +308,37 @@ function setValue(value, newValue) {
 //implementation of https://en.wikipedia.org/wiki/Slab_method; https://tavianator.com/2022/ray_box_boundary.html#:~:text=Geometry%20The%20slab%20method%20tests%20for%20an,any.%20t=%20x%20d%20x%E2%88%92%20x%200.
 
 function rayTrace(range, expand) {
-    var dirVec = mc.thePlayer.getLookVec(),
-        originVec = mc.thePlayer.getPositionEyes(1),
-        intersected = [],
-        entityList = mc.theWorld.loadedEntityList;
+    var oVec = mc.thePlayer.getPositionEyes(1),
+        dVec = mc.thePlayer.getLookVec(),
+        points = {},
+        intersected = [];
 
-    for (var i = 0; i < entityList.length; i++) {
-        var entity = entityList[i]
+    oVec = [oVec.xCoord, oVec.yCoord, oVec.zCoord]
+    dVec = [dVec.xCoord, dVec.yCoord, dVec.zCoord]
 
-        if (!EntityUtils.isSelected(entity, true))
-            continue;
+    for (var i = 0; i < mc.theWorld.loadedEntityList.size(); i++) {
+        var entity = mc.theWorld.loadedEntityList[i];
+
+        if (!EntityUtils.isSelected(entity, true)) continue;
 
         var bb = entity.getEntityBoundingBox().expand(expand, expand, expand),
+            BBminVec = [bb.minX, bb.minY, bb.minZ],
+            BBmaxVec = [bb.maxX, bb.maxY, bb.maxZ];
 
-            tx1 = (bb.minX - originVec.xCoord) / dirVec.xCoord,
-            tx2 = (bb.maxX - originVec.xCoord) / dirVec.xCoord,
-            tmin_x = Math.min(tx1, tx2),
-            tmax_x = Math.max(tx1, tx2),
+        for (var j = 0; j < 3; j++) {
+            var tmin = (BBminVec[j] - oVec[j]) / dVec[j]
+            var tmax = (BBmaxVec[j] - oVec[j]) / dVec[j]
 
-            ty1 = (bb.minY - originVec.yCoord) / dirVec.yCoord,
-            ty2 = (bb.maxY - originVec.yCoord) / dirVec.yCoord,
-            tmin_y = Math.min(ty1, ty2),
-            tmax_y = Math.max(ty1, ty2),
+            points[j] = [Math.min(tmin, tmax), Math.max(tmin, tmax)]
+        }
 
-            tz1 = (bb.minZ - originVec.zCoord) / dirVec.zCoord,
-            tz2 = (bb.maxZ - originVec.zCoord) / dirVec.zCoord,
-            tmin_z = Math.min(tz1, tz2),
-            tmax_z = Math.max(tz1, tz2),
+        var entry = Math.max(points[0][0], points[1][0], points[2][0]),
+            exit = Math.min(points[0][1], points[1][1], points[2][1]);
 
-            tEntry = Math.max(tmin_x, tmin_y, tmin_z),
-            tExit = Math.min(tmax_x, tmax_y, tmax_z);
-
-        if (tExit > 0 && tEntry <= tExit && tEntry <= range)
-            intersected.push(entity);
+        if (entry > 0 && entry <= exit && entry <= range) {
+            intersected.push(entity)
+        }
     }
-
     return intersected
         .sort(function (a, b) PlayerExtensionKt.getDistanceToEntityBox(a, mc.thePlayer) - PlayerExtensionKt.getDistanceToEntityBox(b, mc.thePlayer))[0]
 }
@@ -402,7 +400,7 @@ var totalFallDist = 0, cancelC04 = false, boosted = false, tryBoost = 0, simulat
 var renderSelectedTimer = new MSTimer(), renderSelected = false, lookPos = null,
     destinationPos = null, sentPackets = 0, lookingAtBlock = null, lookingAtEntity = null,
     tpWaitTimer = new MSTimer(), tpWait = false, dynamicScale2 = 0, finalPackets = 0, oldLookPos = null,
-    deltaTP = 200, confirmPositionTicks = 0;
+    deltaTP = 200, confirmPositionFrames = 0, selectedEntity = null;
 
 /*----------------*/
 /* MATRIX UTILITY */
@@ -760,8 +758,7 @@ function containsLink(message) (function () { try { return !!URI.create(message)
 function extractLinks(message) message.split(" ").filter(function (part) containsLink(part));
 
 function allowEditForChar(atI, message) {
-    if (!ignoreLink.get())
-        return true;
+    if (!ignoreLink.get()) return true;
 
     var splitMessage = message.split(" ")
 
@@ -777,17 +774,13 @@ function allowEditForChar(atI, message) {
 }
 
 function getOptimalInterval(insult, reservedSpace) {
-    if (insult.length + reservedSpace > 100)
-        return 0;
-
+    if (insult.length + reservedSpace > 100) return 0;
     var potLength = 2 * insult.length,
         i = 1;
-
     while (potLength > 100 - reservedSpace) {
         i++
         potLength = insult.length + Math.floor(insult.length / i)
     }
-
     return i
 }
 
@@ -824,13 +817,13 @@ function sendInsult(targetName) {
 
     var replacedInsult = ""
 
-    if (avoidChatFilters.get()) {
+    if (avoidChatFilters.get() && (addInvisibleCharacters.get() || useCustomLetters.get())) {
         var customAlphabet = FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8)[FileUtils.readLines(customLettersFile, StandardCharsets.UTF_8).indexOf(customLetters.get())],
             alphabet = "abcdefghijklmnopqrstuvwxyz";
 
         //thank you fellow forum poster: https://hypixel.net/threads/remove-invisible-characters-from-chat-to-prevent-spam-scam-bots.4423025/
         var invisibleChars = ["⛓", "֏", "⭍", "⛬", "⛫", "⛭", "⛮", "⛶", "⛘", "⛐", "⛩", "⛠", "⛋", "⛟", "⛉", "⛍", "⛗", "⛜", "⛡", "⛌", "⛏", "⏺"],
-            optimalInterval = getOptimalInterval(formattedInsult, (chatPrefix.get() + " " + targetName + " ").length) //account for targetName and chat prefix etc...
+            optimalInterval = getOptimalInterval(formattedInsult, (chatPrefix.get() + " " + targetName + " ").length), //account for targetName and chat prefix etc...
             invisibleIndex = invisibleIntervalMode.get() == "Random" ? 
                 Math.floor(Math.random() * 5) + 1 :
                 optimalInterval;
@@ -853,13 +846,14 @@ function sendInsult(targetName) {
                             i + optimalInterval
                     }
                 }
-                if (letterIndex === -1 && !invisibleChars.includes(letter) && (useCustomLetters.get() || addInvisibleCharacters.get())) {
+                if (letterIndex === -1 && !invisibleChars.includes(letter)) {
                     replacedInsult += formattedInsult[i]
                 }
             }
         }
-        if (replacedInsult.length)
-            formattedInsult = replacedInsult;
+        if (replacedInsult.length) {
+            formattedInsult = replacedInsult
+        }
     }
     mc.thePlayer.sendChatMessage(chatPrefix.get() + " " + targetName + " " + formattedInsult)
 }
@@ -1015,8 +1009,9 @@ script.registerModule({
                         mc.thePlayer.sendChatMessage("#b_a_sel_m")
                         break;
                     case "#b_a_undo":
-                        if (selectedParts.length)
-                            selectedParts.pop();
+                        if (selectedParts.length) {
+                            selectedParts.pop()
+                        }
 
                         playSound("random.fizz")
 
@@ -1029,8 +1024,9 @@ script.registerModule({
 
                         clearChat()
 
-                        if (!selectedParts.length)
-                            return mc.thePlayer.sendChatMessage("#b_a_sel_m");
+                        if (!selectedParts.length) {
+                            return mc.thePlayer.sendChatMessage("#b_a_sel_m")
+                        }
 
                         addMessage(
                             prefix + "§a§l[ADD TO EXISTING]",
@@ -1127,9 +1123,12 @@ script.registerModule({
 
                         e.cancelEvent()
 
-                        for (var i = 0; i < temp.length; i++)
-                            !selectedParts.includes(temp[i]) &&
-                                (selectedParts.push(temp[i]), playSound("random.orb"));
+                        for (var i = 0; i < temp.length; i++) {
+                            if (!selectedParts.includes(temp[i])) {
+                                selectedParts.push(temp[i])
+                                playSound("random.orb")
+                            }
+                        }
 
                         mc.thePlayer.sendChatMessage("#builder_tree_remove")
                         break;
@@ -1146,8 +1145,9 @@ script.registerModule({
                     case "#b_r_fin":
                         e.cancelEvent()
 
-                        if (!selectedParts.length)
-                            return mc.thePlayer.sendChatMessage("#builder_tree_remove");
+                        if (!selectedParts.length) {
+                            return mc.thePlayer.sendChatMessage("#builder_tree_remove")
+                        }
 
                         var diff = detectionPhrase.get().split(",").filter(function (phrase) !selectedParts.includes(phrase)).join(",")
 
@@ -1176,35 +1176,39 @@ script.registerModule({
         }
 
         if (packet instanceof S00PacketServerInfo) potKillMessages = [];
-
+        
         if (packet instanceof S02PacketChat) {
             if (mc.theWorld) {
                 var serverChatContent = packet.getChatComponent().getUnformattedText(),
                     serverContentArray = serverChatContent.split(" "),
-
-                    otherNames = Java.from(mc.getNetHandler().getPlayerInfoMap())
-                        .map(function (info) info = info.getGameProfile().getName())
-                        .filter(function (name) name != mc.thePlayer.getName()),
-
+                    names = Java.from(mc.getNetHandler().getPlayerInfoMap()).map(function (info) info = info.getGameProfile().getName()),
+                    otherNames = names.filter(function (n) n != mc.thePlayer.getName()),
+                    scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean),
                     target = customIndex.get() ?
-                        serverContentArray[cIndex] :
-                        (
-                            smartTargetIndex.get() ?
-                                (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) :
-                                serverContentArray[0]
-                        ),
+                    serverContentArray[cIndex] :
+                    (
+                        smartTargetIndex.get() ?
+                            (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) :
+                            serverContentArray[0]
+                    );
 
-                    scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean);
+                if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) {
+                    potKillMessages.push(serverContentArray.filter(Boolean))
+                }
 
-                if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n)))
-                    potKillMessages.push(serverContentArray.filter(Boolean));
+                if (chatPhraseBuilder.get()) return e.cancelEvent();
 
-                if (chatPhraseBuilder.get())
-                    return e.cancelEvent();
-
-                if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
-                    if (detectionMode.get() == "PacketChat")
-                        sendInsult(target);
+                //in 1.8.9 the information sender is missing for S02PacketChat
+                //ChatMessageS2CPacket, the equivalent in new version, has a field sender which would make the detection unique
+                //instead the best approach is to use regex as heuristic which is not unique in all cases, e.g. if other players would write the regex in chat -> false positive
+                //feel free to suggest better ideas
+                if (
+                    serverContentArray.filter(function (part) names.includes(part)).length === 2 &&
+                    scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))
+                ) {
+                    if (detectionMode.get() == "PacketChat") {
+                        sendInsult(target)
+                    }
 
                     if (!targetLog.length || !targetLog.some(function (comp) comp.name == target)) {
                         targetLog.push(
@@ -1235,7 +1239,9 @@ script.registerModule({
                 } else {
                     if (comp.packetsLeft <= 0) {
                         if (useQueue.get()) {
-                            if (!sendQueue.length) queueTimer.reset();
+                            if (!sendQueue.length) {
+                                queueTimer.reset()
+                            }
                             if (!sendQueue.includes(comp.name) && lastQueueTarget != comp.name) {
                                 sendQueue.push(targetName)
                             }
@@ -1250,8 +1256,10 @@ script.registerModule({
         if (targetLog.length) {
             for (var i = 0; i < targetLog.length; i++) {
                 var comp = targetLog[i]
-                if (System.currentTimeMillis() - comp.timeStamp >= (useQueue.get() ? insultTimeout.get() : 500)) {
-                    if (!sendQueue.length) queueTimer.reset();
+                if (System.currentTimeMillis() - comp.timeStamp >= (useQueue.get() ? insultTimeout.get() : 1000)) {
+                    if (!sendQueue.length) {
+                        queueTimer.reset()
+                    }
                     if (!sendQueue.includes(comp.name) && lastQueueTarget != comp.name) {
                         sendQueue.push(comp.name)
                     }
@@ -1298,10 +1306,12 @@ script.registerModule({
         currentTarget = null
         selectingPhrase = false
 
-        if (customIndex.get())
-            setValue(customIndex, false);
-        if (chatPhraseBuilder.get())
-            setValue(chatPhraseBuilder, false);
+        if (customIndex.get()) {
+            setValue(customIndex, false)
+        }
+        if (chatPhraseBuilder.get()) {
+            setValue(chatPhraseBuilder, false)
+        }
     }
     module.on("world", function () {
         clearValues()
@@ -1376,8 +1386,9 @@ function getBlockToBreak(bedPos, range) {
         outerBlocks.push(bedFootPos[direction](1), bedFootPos[direction](1)[facing](1));
     }
 
-    if (outerBlocks.some(function (block) mc.theWorld.isAirBlock(block) || !BlockUtils.isBlockBBValid(block, getBlockState(block), false, false)))
-        return bedPos;
+    if (outerBlocks.some(function (block) mc.theWorld.isAirBlock(block) || !BlockUtils.isBlockBBValid(block, getBlockState(block), false, false))) {
+        return bedPos
+    }
 
     return outerBlocks
         .filter(function (block) BlockUtils.getCenterDistance(block) <= range)
@@ -1395,18 +1406,21 @@ function breakBlock(blockPos, range, swing, rotation) {
         return
     }
 
-    if (!breakingBlock)
-        breakingBlock = blockPos;
+    if (!breakingBlock) {
+        breakingBlock = blockPos
+    }
 
-    if (!breakDamage)
-        PacketUtils.sendPacket(new C07PacketPlayerDigging(C07PacketPlayerDigging.Action.START_DESTROY_BLOCK, blockPos, EnumFacing.DOWN), true);
+    if (!breakDamage) {
+        PacketUtils.sendPacket(new C07PacketPlayerDigging(C07PacketPlayerDigging.Action.START_DESTROY_BLOCK, blockPos, EnumFacing.DOWN), true)
+    }
 
     breakDamage += getBlock(blockPos).getPlayerRelativeBlockHardness(mc.thePlayer, mc.theWorld, blockPos);
 
     if (swing) {
         mc.thePlayer.swingItem()
-    } else
-        PacketUtils.sendPacket(new C0APacketAnimation(), true);
+    } else {
+        PacketUtils.sendPacket(new C0APacketAnimation(), true)
+    }
 
     if (rotation) {
         var rotVec = RotationUtils.faceBlock(breakingBlock, true, false, new ClosedDoubleRange({
@@ -1416,10 +1430,11 @@ function breakBlock(blockPos, range, swing, rotation) {
                 lessThanOrEqual: function (a, b) { return a <= b },
                 isEmpty: function () { return false }
             })
-        );
+        )
 
-        rotVec &&
-            RotationUtils.setTargetRotation(rotVec.rotation, new RotationSettings(ModuleManager.getModule("Fucker"), function () true), 1);
+        if (rotVec) {
+            RotationUtils.setTargetRotation(rotVec.rotation, new RotationSettings(ModuleManager.getModule("Fucker"), function () true), 1)
+        }
     }
 
     if (breakDamage >= 1) {
@@ -1440,21 +1455,20 @@ script.registerModule({
     module.on("update", function () {
         module.tag = fuckerRange.get().toFixed(2)
 
-        if (blockHitDelay > 0)
-            return blockHitDelay--;
+        if (blockHitDelay > 0) return blockHitDelay--;
 
-        if (breakingBlock)
+        if (breakingBlock) {
             return breakBlock(
                 breakingBlock,
                 fuckerRange.get(),
                 swingItem.get(),
                 fuckerRotation.get()
-            );
+            )
+        }
 
         var bedPos = getClosestBedPos(fuckerRange.get())
 
-        if (!bedPos)
-            return;
+        if (!bedPos) return;
 
         breakBlock(
             getBlockToBreak(
@@ -1464,24 +1478,68 @@ script.registerModule({
             fuckerRange.get(),
             swingItem.get(),
             fuckerRotation.get()
-        );
+        )
     });
     module.on("render2D", function () {
-        if (!breakDamage || !renderProgress.get())
-            return;
+        if (!breakDamage || !renderProgress.get()) return;
 
         var breakPercentage = breakDamage * 100
 
-        Gui.drawRect(470, 280, 340, 343, new Color(20, 20, 20).getRGB());
-        Gui.drawRect(467, 283, 343, 298, new Color(50, 50, 50).getRGB());
-        mcFont.drawString("LayerFucker: (ID: " + Block.getIdFromBlock(getBlock(breakingBlock)) + ")", 346, 286, 0xFFFFFF);
+        Gui.drawRect(
+            470,
+            280,
+            340,
+            343,
+            new Color(20, 20, 20).getRGB()
+        )
+        Gui.drawRect(
+            467,
+            283,
+            343,
+            298,
+            new Color(50, 50, 50).getRGB()
+        )
+        mcFont.drawString(
+            "LayerFucker: (ID: " + Block.getIdFromBlock(getBlock(breakingBlock)) + ")",
+            346,
+            286,
+            0xFFFFFF
+        )
 
-        Gui.drawRect(467, 301, 343, 332, new Color(50, 50, 50).getRGB());
-        mcFont.drawString("Breaking: " + breakPercentage.toFixed(2) + "%", 345, 304, 0xFFFFFF);
-        mcFont.drawString(getBlockName(breakingBlock).toUpperCase(), 345, 320, 0xFFFFFF);
+        Gui.drawRect(
+            467,
+            301,
+            343,
+            332,
+            new Color(50, 50, 50).getRGB()
+        )
+        mcFont.drawString(
+            "Breaking: " + breakPercentage.toFixed(2) + "%",
+            345,
+            304,
+            0xFFFFFF
+        )
+        mcFont.drawString(
+            getBlockName(breakingBlock).toUpperCase(),
+            345,
+            320,
+            0xFFFFFF
+        )
 
-        Gui.drawRect(467, 335, 343, 340, new Color(50, 50, 50).getRGB());
-        Gui.drawRect(343, 335, 467 + 124 * breakDamage - 124, 340, Color.HSBtoRGB(breakDamage / 5.0, 1.0, 1.0) | 0xFF0000);
+        Gui.drawRect(
+            467,
+            335,
+            343,
+            340,
+            new Color(50, 50, 50).getRGB()
+        )
+        Gui.drawRect(
+            343,
+            335,
+            467 + 124 * breakDamage - 124,
+            340,
+            Color.HSBtoRGB(breakDamage / 5.0, 1.0, 1.0) | 0xFF0000
+        )
 
         var stack = new ItemStack(getBlock(breakingBlock).getItem(mc.theWorld, breakingBlock))
 
@@ -1493,8 +1551,7 @@ script.registerModule({
         RenderHelper.disableStandardItemLighting();
     });
     module.on("render3D", function () {
-        if (!breakDamage || !renderProgress.get())
-            return;
+        if (!breakDamage || !renderProgress.get()) return;
 
         RenderUtils.drawBlockBox(breakingBlock, Color.RED, true)
     });
@@ -1629,8 +1686,7 @@ function approximateFallDamage() {
         finalDamage = 0,
         tEPF = 0; //account for onDisable mc.thePlayer.fallDistance ~ += 1.5
 
-    if (baseDamage <= 0)
-        return 0;
+    if (baseDamage <= 0) return 0;
 
     for (var i = 0; i < 4; i++) {
         var slotStack = mc.thePlayer.getCurrentArmor(i)
@@ -1644,8 +1700,7 @@ function approximateFallDamage() {
                 tagLevel = tag.getShort("lvl");
 
             tEPF += (function(id, lvl) {
-                if (id != 0 && id != 2)
-                    return 0;
+                if (id != 0 && id != 2) return 0;
 
                 var modifier = id == 0 ?
                     0.75 :
@@ -1657,8 +1712,9 @@ function approximateFallDamage() {
     }
 
     tEPF = Math.ceil(tEPF * 0.75) //according to forum sources: random value (0.5, 1) is used, however this is crap to work with; avg 0.75
-    if (tEPF > 20)
-        tEPF = 20;
+    if (tEPF > 20) {
+        tEPF = 20
+    }
 
     finalDamage = baseDamage * (1 - tEPF * 0.04)
 
@@ -1666,9 +1722,9 @@ function approximateFallDamage() {
         if (ResistanceEffect.getAmplifier() <= 3) {
             var resLevel = ResistanceEffect.getAmplifier() + 1,
                 resRed = 1 - (0.2 * resLevel);
+
             finalDamage = finalDamage * resRed
-        } else
-            return 0;
+        } else return 0;
     }
 
     return Math.ceil(finalDamage)
@@ -1705,12 +1761,14 @@ script.registerModule({
     })
     module.on("update", function () {
         module.tag = flyMode.get()
+
         var MatrixFlyModule = ModuleManager.getModule("MatrixFly")
 
         switch (flyMode.get()) {
             case "FakeBlock":
-                if (mc.thePlayer.onGround)
-                    mc.thePlayer.jump();
+                if (mc.thePlayer.onGround) {
+                    mc.thePlayer.jump()
+                }
 
                 var pos = new BlockPos(mc.thePlayer).down(1)
 
@@ -1718,8 +1776,9 @@ script.registerModule({
                     mc.theWorld.setBlockState(pos, Blocks.barrier.getDefaultState())
                     lastPlaced = pos
                     mc.thePlayer.fallDistance = 0
-                } else if (lastPlaced)
-                    mc.theWorld.setBlockToAir(lastPlaced);
+                } else if (lastPlaced) {
+                    mc.theWorld.setBlockToAir(lastPlaced)
+                }
                 break;
             case "BoatFly":
                 if (mc.thePlayer.isRiding()) {
@@ -1754,8 +1813,9 @@ script.registerModule({
                 break;
             case "CancelC04":
                 if (cancelMode.get() == "Normal") {
-                    if (canRecieveFallDMG() && disableOn.get() && getRelativeFallDMG() >= 1 - disableOnPercentage.get() / 100)
-                        MatrixFlyModule.setState(false);
+                    if (canRecieveFallDMG() && disableOn.get() && getRelativeFallDMG() >= 1 - disableOnPercentage.get() / 100) {
+                        MatrixFlyModule.setState(false)
+                    }
 
                     if (mc.thePlayer.fallDistance >= 1) {
                         cancelC04 = true
@@ -1766,14 +1826,16 @@ script.registerModule({
                         }
                         totalFallDist += mc.thePlayer.fallDistance
                         mc.thePlayer.fallDistance = 0
-                    } else
-                        cancelC04 = false;
+                    } else {
+                        cancelC04 = false
+                    }
                 } else {
                     if (mc.thePlayer.ticksExisted % 2 == 0) {
                         mc.thePlayer.motionY = 0.039
                         cancelC04 = true
-                    } else
-                        cancelC04 = false;
+                    } else {
+                        cancelC04 = false
+                    }
                 }
                 break;
             case "S08SimulateSetback":
@@ -1799,8 +1861,9 @@ script.registerModule({
                     tryBoost++
                 } else if (tryBoost >= 5) {
                     mc.timer.timerSpeed = 1
-                    if (simulateStartY > mc.thePlayer.posY)
-                        tryBoost = 0;
+                    if (simulateStartY > mc.thePlayer.posY) {
+                        tryBoost = 0
+                    }
                 }
                 break;
             case "Glide":
@@ -1839,8 +1902,9 @@ script.registerModule({
                     mc.thePlayer.motionY = tntMotionY.get()
                     MovementUtils.strafe(tntMotionXZ.get())
 
-                    if (!mc.thePlayer.onGround)
-                        tntStartBoost = true;
+                    if (!mc.thePlayer.onGround) {
+                        tntStartBoost = true
+                    }
                 }
                 if (mc.thePlayer.fallDistance >= 1 && tntFly && mc.thePlayer.ticksExisted % 5 == 0) {
                     mc.thePlayer.motionY = 0.15
@@ -1877,13 +1941,15 @@ script.registerModule({
                 if (mc.thePlayer.isBurning() || PoisonEffect || WitherEffect) {
                     if (isMovingHorizontally(mc.thePlayer)) {
                         mc.thePlayer.motionY = -0.005
-                    } else
-                        mc.thePlayer.motionY = -0.01;
+                    } else {
+                        mc.thePlayer.motionY = -0.01
+                    }
                 }
                 break;
             case "DamageGlide":
-                if (mc.thePlayer.hurtTime > 0)
-                    wasDamaged = true;
+                if (mc.thePlayer.hurtTime > 0) {
+                    wasDamaged = true
+                }
 
                 if (mc.thePlayer.ticksExisted % 20 == 0) {
                     for (var i = 0; i <= 65; i++) {
@@ -1919,28 +1985,32 @@ script.registerModule({
                 if (wasDamaged) {
                     if (isMovingHorizontally(mc.thePlayer)) {
                         mc.thePlayer.motionY = -0.005
-                    } else
-                        mc.thePlayer.motionY = -0.01;
+                    } else {
+                        mc.thePlayer.motionY = -0.01
+                    }
                 }
                 break;
             case "BlinkDamageGlide":
-                if (mc.thePlayer.hurtTime > 0)
-                    wasDamaged = true;
+                if (mc.thePlayer.hurtTime > 0) {
+                    wasDamaged = true
+                }
                 if (wasDamaged) {
                     mc.thePlayer.motionY = -0.01
                 }
         }
     });
     module.on("move", function (e) {
-        !wasDamaged && (flyMode.get() == "DamageGlide" || flyMode.get() == "BlinkDamageGlide") &&
+        if (!wasDamaged && (flyMode.get() == "DamageGlide" || flyMode.get() == "BlinkDamageGlide")) {
             e.zeroXZ();
+        }
     })
     module.on("packet", function (e) {
         var packet = e.getPacket()
 
         if (flyMode.get() == "CancelC04") {
-            if (packet instanceof C04PacketPlayerPosition && cancelC04)
-                e.cancelEvent();
+            if (packet instanceof C04PacketPlayerPosition && cancelC04) {
+                e.cancelEvent()
+            }
         }
         if (flyMode.get() == "S08SimulateSetback") {
             if (packet instanceof S08PacketPlayerPosLook) {
@@ -1979,11 +2049,13 @@ script.registerModule({
                 mc.thePlayer.jump();
         }
 
-        if (flyMode.get() == "TNTBlink" && tntFly)
-            BlinkUtils.blink(packet, e, true, true);
+        if (flyMode.get() == "TNTBlink" && tntFly) {
+            BlinkUtils.blink(packet, e, true, true)
+        }
 
-        if (flyMode.get() == "BlinkDamageGlide" && wasDamaged)
-            BlinkUtils.blink(packet, e, true, true);
+        if (flyMode.get() == "BlinkDamageGlide" && wasDamaged) {
+            BlinkUtils.blink(packet, e, true, true)
+        }
     });
     module.on("render2D", function () {
         if (
@@ -1999,31 +2071,84 @@ script.registerModule({
             screenWidth = new ScaledResolution(mc).getScaledWidth(),
             screenHeight = new ScaledResolution(mc).getScaledHeight();
 
-        Gui.drawRect(screenWidth / 2 - 10, screenHeight / 2 + 10, screenWidth / 2 - 140, screenHeight / 2 + 73, new Color(20, 20, 20).getRGB())
-        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 13, screenWidth / 2 - 137, screenHeight / 2 + 28, new Color(50, 50, 50).getRGB())
+        Gui.drawRect(
+            screenWidth / 2 - 10,
+            screenHeight / 2 + 10,
+            screenWidth / 2 - 140,
+            screenHeight / 2 + 73,
+            new Color(20, 20, 20).getRGB()
+        )
+        Gui.drawRect(
+            screenWidth / 2 - 13,
+            screenHeight / 2 + 13,
+            screenWidth / 2 - 137,
+            screenHeight / 2 + 28,
+            new Color(50, 50, 50).getRGB()
+        )
 
         if (percentage < 100) {
-            mcFont.drawString("LANDING SURVIVABLE", screenWidth / 2 - 134, screenHeight / 2 + 17, 0x11ff00)
-        } else
-            mcFont.drawString("YOU WILL DIE", screenWidth / 2 - 134, screenHeight / 2 + 17, 0xff0000);
+            mcFont.drawString(
+                "LANDING SURVIVABLE",
+                screenWidth / 2 - 134,
+                screenHeight / 2 + 17,
+                0x11ff00
+            )
+        } else {
+            mcFont.drawString(
+                "YOU WILL DIE",
+                screenWidth / 2 - 134,
+                screenHeight / 2 + 17,
+                0xff0000
+            )
+        }
 
-        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 31, screenWidth / 2 - 137, screenHeight / 2 + 62, new Color(50, 50, 50).getRGB())
-        mcFont.drawString("Spent ~" + percentage.toFixed(2) + "%", screenWidth / 2 - 135, screenHeight / 2 + 34, 0xFFFFFF)
-        mcFont.drawString("OF MAX AIR TIME", screenWidth / 2 - 135, screenHeight / 2 + 50, 0xFFFFFF)
+        Gui.drawRect(
+            screenWidth / 2 - 13,
+            screenHeight / 2 + 31,
+            screenWidth / 2 - 137,
+            screenHeight / 2 + 62,
+            new Color(50, 50, 50).getRGB()
+        )
+        mcFont.drawString(
+            "Spent ~" + percentage.toFixed(2) + "%",
+            screenWidth / 2 - 135,
+            screenHeight / 2 + 34,
+            0xFFFFFF
+        )
+        mcFont.drawString(
+            "OF MAX AIR TIME",
+            screenWidth / 2 - 135,
+            screenHeight / 2 + 50,
+            0xFFFFFF
+        )
 
-        Gui.drawRect(screenWidth / 2 - 13, screenHeight / 2 + 65, screenWidth / 2 - 137, screenHeight / 2 + 70, new Color(50, 50, 50).getRGB())
-        Gui.drawRect(screenWidth / 2 - 137, screenHeight / 2 + 65, screenWidth / 2 - 13 + 124 * renderDMG - 124, screenHeight / 2 + 70, Color.HSBtoRGB(renderDMG / 5, 1.0, 1.0) | 0xFF0000)
+        Gui.drawRect(
+            screenWidth / 2 - 13,
+            screenHeight / 2 + 65,
+            screenWidth / 2 - 137,
+            screenHeight / 2 + 70,
+            new Color(50, 50, 50).getRGB()
+        )
+        Gui.drawRect(
+            screenWidth / 2 - 137,
+            screenHeight / 2 + 65,
+            screenWidth / 2 - 13 + 124 * renderDMG - 124,
+            screenHeight / 2 + 70,
+            Color.HSBtoRGB(renderDMG / 5, 1.0, 1.0) | 0xFF0000
+        )
     })
     module.on("world", function () {
-        if (flyMode.get() == "S08SimulateSetback")
-            ModuleManager.getModule("MatrixFly").setState(false);
+        if (flyMode.get() == "S08SimulateSetback") {
+            ModuleManager.getModule("MatrixFly").setState(false)
+        }
     })
     module.on("disable", function () {
-        lastPlaced &&
-            mc.theWorld.setBlockToAir(lastPlaced);
-
-        ModuleManager.getModule("NoFall").getState() &&
-            (mc.thePlayer.fallDistance = totalFallDist); //allow NoFall MLG to catch fall
+        if (lastPlaced) {
+            mc.theWorld.setBlockToAir(lastPlaced)
+        }
+        if (ModuleManager.getModule("NoFall").getState()) {
+            mc.thePlayer.fallDistance = totalFallDist //allow NoFall MLG to catch fall
+        }
 
         mc.timer.timerSpeed = 1
         tryBoost = 0
@@ -2032,6 +2157,7 @@ script.registerModule({
         tntFly = false
         tntStartBoost = false
         wasDamaged = false
+
         BlinkUtils.unblink()
     })
 });
@@ -2062,6 +2188,12 @@ MatrixClickTPValues = {
         name: "Mode",
         values: ["PacketSpam", "CyclePackets"],
         default: "CyclePackets"
+    }),
+    tpPredictSizeValue: tpPredictSize = Setting.integer({
+        name: "PredictFrames",
+        min: 0,
+        max: 10,
+        default: 1
     }),
     cycleModeValue: cycleMode = Setting.list({
         name: "CycleMode",
@@ -2226,20 +2358,16 @@ function drawBlockOnScreen(blockPos, x, y, scale, yaw, pitch) { //feel very free
 function isRiding() { //prevents issues with desync where dismount is not detected by mc.thePlayer.ridingEntity or mc.thePlayer.isRiding()
     var ridingEntity = mc.thePlayer.ridingEntity
 
-    if (!ridingEntity)
-        return false;
+    if (!ridingEntity) return false;
 
-    var clazz = [EntityBoat, EntityHorse, EntityMinecartEmpty || EntityMinecart, EntityPig]
+    var clazz = [EntityBoat, EntityHorse, EntityPig, EntityMinecartEmpty || EntityMinecart]
         .find(function (c) c.class.isInstance(ridingEntity)) //prevents issue with EntityMinecart and EntityMinecartEmpty
 
-    if (!clazz)
-        return false;
+    if (!clazz) return false;
 
-    if (ModuleManager.getModule("Freecam").getState())
-        return true;
+    if (ModuleManager.getModule("Freecam").getState()) return true;
 
-    if (Math.abs(mc.thePlayer.posY - ridingEntity.posY) > 3)
-        return true; //prevents issue with FreeCam false positive
+    if (Math.abs(mc.thePlayer.posY - ridingEntity.posY) > 3) return true; //prevents issue with FreeCam false positive
 
     var dummyMount = new clazz(mc.theWorld)
     dummyMount.setPosition(ridingEntity.posX, ridingEntity.posY, ridingEntity.posZ)
@@ -2257,19 +2385,107 @@ function xTextOffset(str) {
     return mc.fontRendererObj.getStringWidth(str) / 2
 }
 
+function getFrustum(ofEntity) {
+    var prevView = mc.getRenderViewEntity()
+    var partialTicks = mc.timer.renderPartialTicks
+
+    GL11.glMatrixMode(GL11.GL_PROJECTION)
+    GL11.glPushMatrix()
+    GL11.glMatrixMode(GL11.GL_MODELVIEW)
+    GL11.glPushMatrix()
+
+    mc.setRenderViewEntity(ofEntity)
+
+    //did not know about this function; handles the rotation of the frustum so you dont just offset the position to the target entity
+    //did not do this in skeleton esp which is why it did not work lol
+    //also Reflector does not work here
+    var entityRendererClass = mc.entityRenderer.getClass()
+    var setupCameraTransformMethod = entityRendererClass.getDeclaredMethod(
+        "func_78479_a",
+        java.lang.Float.TYPE,
+        java.lang.Integer.TYPE
+    )
+    setupCameraTransformMethod.setAccessible(true)
+    setupCameraTransformMethod.invoke(mc.entityRenderer, new java.lang.Float(partialTicks), new java.lang.Integer(2))
+
+    var camFrustum = new Frustum()
+
+    var x = ofEntity.lastTickPosX + (ofEntity.posX - ofEntity.lastTickPosX) * partialTicks
+    var y = ofEntity.lastTickPosY + (ofEntity.posY - ofEntity.lastTickPosY) * partialTicks
+    var z = ofEntity.lastTickPosZ + (ofEntity.posZ - ofEntity.lastTickPosZ) * partialTicks
+
+    camFrustum.setPosition(x, y, z)
+
+    mc.setRenderViewEntity(prevView)
+
+    GL11.glMatrixMode(GL11.GL_MODELVIEW)
+    GL11.glPopMatrix()
+    GL11.glMatrixMode(GL11.GL_PROJECTION)
+    GL11.glPopMatrix()
+    GL11.glMatrixMode(GL11.GL_MODELVIEW)
+
+    return camFrustum
+}
+
+function isAABBInFrustum(pos, frustum) {
+    return frustum.isBoundingBoxInFrustum(getBlock(pos).getSelectedBoundingBox(mc.theWorld, pos))
+}
+
+function getEstimatePos(entity, ticks) { //really not so sophisticated (see SimulatedPlayer LB) but enough ig
+    var vx = entity.posX - entity.lastTickPosX
+    var vy = entity.posY - entity.lastTickPosY
+    var vz = entity.posZ - entity.lastTickPosZ
+
+    return new BlockPos(
+        entity.posX + vx * ticks,
+        entity.posY + vy * ticks,
+        entity.posZ + vz * ticks
+    )
+}
+
+function findAltPos(anchor, radius, entity) {
+    entity || null;
+    var altPos = []
+    var frustum = entity ? getFrustum(entity) : null
+    var isInvalidPos = function (p) {
+        return (
+            isPassable(p) ||
+            !isPassable(p.up(1)) ||
+            !isPassable(p.up(2)) ||
+            frustum && tpPredictSize.get() > 0 && !isAABBInFrustum(p, frustum)
+        )
+    }
+
+    if (isInvalidPos(anchor)) {
+        for (var x = -radius; x <= radius; x++) {
+            for (var y = -radius; y <= radius; y++) {
+                for (var z = -radius; z <= radius; z++) {
+                    var pos = new BlockPos(
+                        anchor.getX() + x,
+                        anchor.getY() + y,
+                        anchor.getZ() + z
+                    )
+                    if (isInvalidPos(pos)) {
+                        continue
+                    }
+                    altPos.push(pos)
+                }
+            }
+        }
+        if (altPos.length) {
+            return altPos
+                .sort(function (a, b) getDist(a, anchor) - getDist(b, anchor))[0];
+        }
+    }
+    return null
+}
+
 script.registerModule({
     name: "MatrixClickTP",
     category: "Fun",
     description: "Module with Matrix Teleport bypass",
     settings: MatrixClickTPValues,
 }, function (module) {
-    module.on("enable", function () {
-        sentPackets = 0
-        finalPackets = 0
-        tpWait = false
-        destinationPos = null
-        confirmPositionTicks = 0
-    })
     module.on("render3D", function () {
         lookingAtBlock = mc.thePlayer.rayTrace(255, 1)
         lookingAtEntity = rayTrace(
@@ -2302,11 +2518,11 @@ script.registerModule({
                     )
             )
 
-        if (lookPos)
-            deltaTP = getDist(new BlockPos(mc.thePlayer).down(1), lookPos);
+        if (lookPos) {
+            deltaTP = getDist(new BlockPos(mc.thePlayer).down(1), lookPos)
+        }
 
-        if (!destinationPos && !lookPos)
-            return;
+        if (!destinationPos && !lookPos) return;
 
         var MatrixClickTPModule = ModuleManager.getModule("MatrixClickTP")
 
@@ -2326,29 +2542,9 @@ script.registerModule({
                 return
             }
 
-            confirmPositionTicks = 10
+            confirmPositionFrames = 10
 
-            var altPos = [] 
-
-            if (
-                isPassable(destinationPos) ||
-                !isPassable(destinationPos.up(1)) ||
-                !isPassable(destinationPos.up(2))
-            ) {
-                for (var x = -3; x <= 3; x++) {
-                    for (var y = -3; y <= 3; y++) {
-                        for (var z = -3; z <= 3; z++) {
-                            var pos = new BlockPos(destinationPos.getX() + x, destinationPos.getY() + y, destinationPos.getZ() + z)
-                            if (isPassable(pos) || !isPassable(pos.up(2)) || !isPassable(pos.up(1))) {
-                                continue
-                            }
-                            altPos.push(pos)
-                        }
-                    }
-                }
-                if (altPos.length)
-                    destinationPos = altPos.sort(function (a, b) getDist(a, destinationPos) - getDist(b, destinationPos))[0];
-            }
+            selectedEntity = lookingAtEntity
 
             renderSelected = true
 
@@ -2390,19 +2586,30 @@ script.registerModule({
             renderSelectedTimer.reset()
         }
 
-        if (renderSelectedTimer.hasTimePassed(400))
-            renderSelected = false;
+        if (renderSelectedTimer.hasTimePassed(400)) {
+            renderSelected = false
+        }
 
         if (!renderSelected && !destinationPos) {
             if (lookingAtEntity && (lookingAtBlock == "MISS" || targetSelectPriotity.get() == "Target")) {
                 RenderUtils.drawEntityBox(lookingAtEntity, Color.GREEN, true)
-            } else RenderUtils.drawBlockBox(lookPos, Color.GREEN, true);
+            } else {
+                RenderUtils.drawBlockBox(lookPos, Color.GREEN, true)
+            }
         }
         if (renderSelected && destinationPos) {
             RenderUtils.drawBlockBox(destinationPos, Color.RED, true)
         }
         if (destinationPos && !renderSelected) {
             RenderUtils.drawBlockBox(destinationPos, Color.ORANGE, true)
+        }
+
+        if (destinationPos) {
+            destinationPos = findAltPos(
+                selectedEntity && tpPredictSize.get() > 0 && isMovingHorizontally(selectedEntity) ? getEstimatePos(selectedEntity, tpPredictSize.get()) : destinationPos,
+                3,
+                selectedEntity || null
+            ) || destinationPos
         }
     });
     module.on("render2D", function () {
@@ -2416,7 +2623,15 @@ script.registerModule({
             }
 
             dynamicScale2 = animate(15, dynamicScale2, 0.25)
-            drawBlockOnScreen(lookPos, screenWidth / 2, screenHeight / 2 + 45, dynamicScale2, 45, 0)
+
+            drawBlockOnScreen(
+                lookPos,
+                screenWidth / 2,
+                screenHeight / 2 + 45,
+                dynamicScale2,
+                45,
+                0
+            )
 
             var displayText = []
 
@@ -2432,12 +2647,21 @@ script.registerModule({
 
             displayText = displayText.join(" and ")
 
-            mcFont.drawString(displayText, screenWidth / 2 - xTextOffset(displayText), screenHeight / 2 + 10, 0xFFFFFF)
-            mcFont.drawString(lookPos.getX() + " " + lookPos.getY() + " " + lookPos.getZ(), screenWidth / 2 - xTextOffset(lookPos.getX() + " " + lookPos.getY() + " " + lookPos.getZ()), screenHeight / 2 + 22, 0xFFFFFF)
+            mcFont.drawString(
+                displayText,
+                screenWidth / 2 - xTextOffset(displayText),
+                screenHeight / 2 + 10,
+                0xFFFFFF
+            )
+            mcFont.drawString(
+                lookPos.getX() + " " + lookPos.getY() + " " + lookPos.getZ(),
+                screenWidth / 2 - xTextOffset(lookPos.getX() + " " + lookPos.getY() + " " + lookPos.getZ()),
+                screenHeight / 2 + 22,
+                0xFFFFFF
+            )
         }
 
-        if (!destinationPos)
-            return;
+        if (!destinationPos) return;
 
         ModuleManager.getModule("FreeCam").setState(false)
 
@@ -2467,32 +2691,57 @@ script.registerModule({
                 var xOff = Math.sin(i * Math.PI / 180) * 0.6,
                     zOff = Math.cos(i * Math.PI / 180) * 0.6;
 
-                mc.theWorld.spawnParticle(EnumParticleTypes.FIREWORKS_SPARK, mc.thePlayer.posX + xOff, mc.thePlayer.posY + 2, mc.thePlayer.posZ + zOff, 0, -1, 0)
+                mc.theWorld.spawnParticle(
+                    EnumParticleTypes.FIREWORKS_SPARK,
+                    mc.thePlayer.posX + xOff,
+                    mc.thePlayer.posY + 2,
+                    mc.thePlayer.posZ + zOff,
+                    0,
+                    -1,
+                    0
+                )
             }
         }
 
         dynamicScale2 = animate(25, dynamicScale2, 0.25)
-        drawBlockOnScreen(destinationPos, screenWidth / 2, screenHeight / 2 + 40, dynamicScale2, (System.currentTimeMillis() / 10) % 360, 0)
 
-        mcFont.drawString("§6attempting...", screenWidth / 2 - 25, screenHeight / 2 + 10, 0xFFFFFF)
+        drawBlockOnScreen(
+            destinationPos,
+            screenWidth / 2,
+            screenHeight / 2 + 40,
+            dynamicScale2,
+            (System.currentTimeMillis() / 10) % 360,
+            0
+        )
+
+        mcFont.drawString(
+            "§6attempting...",
+            screenWidth / 2 - 25,
+            screenHeight / 2 + 10,
+            0xFFFFFF
+        )
 
         var MatrixTeleportModule = ModuleManager.getModule("MatrixClickTP")
+
+        if ((sentPackets || finalPackets) % 10 == 0 && isRiding()) {
+            confirmPositionFrames += 5
+        }
 
         if (!isRiding()) {
             mc.timer.timerSpeed = 1
 
-            if (confirmPositionTicks-- > 0)
-                return;
+            if (confirmPositionFrames > 0) return confirmPositionFrames--;
 
-            if (getDist(new BlockPos(mc.thePlayer), destinationPos.up(1)) > 3) {
+            if (getDist(new BlockPos(mc.thePlayer), destinationPos.up(1)) > 5) {
                 if (clickTpMode.get() == "CyclePackets") {
                     addMessage("")
                     addMessage(prefix + "§c§lCanceled Teleport!")
                     addMessage(prefix + "Dismounted too early!")
                     addMessage("")
 
-                    playSounds.get() &&
-                        playSound("random.break");
+                    if (playSounds.get()) {
+                        playSound("random.break")
+                    }
 
                     MatrixTeleportModule.setState(false)
                 }
@@ -2503,8 +2752,9 @@ script.registerModule({
                 addMessage(prefix + "Teleported successfully with §c§l" + finalPackets + " §7packets!")
                 addMessage("")
 
-                playSounds.get() &&
-                    playSound("mob.endermen.portal");
+                if (playSounds.get()) {
+                    playSound("mob.endermen.portal")
+                }
 
                 MatrixTeleportModule.setState(false)
             }
@@ -2515,8 +2765,10 @@ script.registerModule({
             if (clickTpMode.get() == "PacketSpam" || cycleMode.get() == "Consistent") {
                 addMessage(prefix + "Teleport failed!")
                 addMessage(prefix + "Sent §c§l" + finalPackets + " §7packets")
-                playSounds.get() &&
-                    playSound("random.break");
+
+                if (playSounds.get()) {
+                    playSound("random.break")
+                }
 
                 MatrixTeleportModule.setState(false)
             } else if (cycleMode.get() == "AlternatePackets") {
@@ -2528,8 +2780,7 @@ script.registerModule({
     module.on("packet", function (e) {
         var packet = e.getPacket()
 
-        if (!destinationPos || !isRiding())
-            return;
+        if (!isRiding() || !destinationPos) return;
 
         if (mc.thePlayer.isRiding() && clickTpMode.get() == "CyclePackets") {
             if (cycleMode.get() == "AlternatePackets") {
@@ -2602,8 +2853,6 @@ script.registerModule({
                     e.cancelEvent()
                 }
             }
-            if (packet instanceof C0CPacketInput)
-                e.cancelEvent();
         }
     })
     module.on("update", function () {
@@ -2611,18 +2860,19 @@ script.registerModule({
 
         if (!destinationPos && freeCamSelect.get() && Keyboard.isKeyDown(Keyboard.getKeyIndex(freeCamSelectButton.get().toUpperCase()))) {
             if (clickTpMode.get() != "PacketSpam") {
-                mc.thePlayer.isRiding() &&
+                if (mc.thePlayer.isRiding()) {
                     ModuleManager.getModule("FreeCam").setState(true)
+                }
             } else {
                 ModuleManager.getModule("FreeCam").setState(true)
             }
         }
 
-        if (!destinationPos)
-            return;
+        if (!destinationPos) return;
 
-        if (isRiding())
+        if (isRiding()) {
             mc.timer.timerSpeed = tpTimer.get();
+        }
 
         if (clickTpMode.get() == "PacketSpam") {
             PacketUtils.sendPacket(
@@ -2642,9 +2892,12 @@ script.registerModule({
         lookingAtBlock = null
         lookingAtEntity = null
         lookPos = null
+        selectedEntity = null
+        tpWait = false
         mc.timer.timerSpeed = 1
         sentPackets = 0
         finalPackets = 0
+        confirmPositionFrames = 0
 
         ModuleManager.getModule("FreeCam").setState(false)
     })
@@ -2687,8 +2940,9 @@ script.registerModule({
             case "OnGround":
                 if (!mc.gameSettings.keyBindJump.pressed && MovementUtils.isOnGround(0.001) && !mc.thePlayer.isCollidedHorizontally) {
                     mc.thePlayer.motionY = 0
-                    if (mc.thePlayer.ticksExisted % 2 == 0 && entityIsMoving(mc.thePlayer))
-                        MovementUtils.strafe(onGroundBoost.get());
+                    if (mc.thePlayer.ticksExisted % 2 == 0 && entityIsMoving(mc.thePlayer)) {
+                        MovementUtils.strafe(onGroundBoost.get())
+                    }
                 }
                 break;
             case "BHop":
@@ -2698,8 +2952,9 @@ script.registerModule({
                             MovementUtils.strafe(bHopBoost.get())
                         }
                     }
-                    if (entityIsMoving(mc.thePlayer) && mc.thePlayer.onGround)
-                        mc.thePlayer.jump();
+                    if (entityIsMoving(mc.thePlayer) && mc.thePlayer.onGround) {
+                        mc.thePlayer.jump()
+                    }
                 }
                 break;
             case "TimerHop":
@@ -2712,8 +2967,9 @@ script.registerModule({
                 } else {
                     mc.timer.timerSpeed = 1
                 }
-                if (mc.thePlayer.fallDistance > 1)
-                    mc.timer.timerSpeed = 1;
+                if (mc.thePlayer.fallDistance > 1) {
+                    mc.timer.timerSpeed = 1
+                }
         }
     })
     module.on("disable", function () {
@@ -2760,11 +3016,6 @@ MatrixUtilityValues = {
         name: "Mode",
         values: ["OldZombie", "CzechHek", "DuplicateProfile"],
         default: "DuplicateProfile",
-        isSupported: function() antiBot.get()
-    }),
-    debugRemovalValue: debugRemoval = Setting.boolean({
-        name: "Debug",
-        default: false,
         isSupported: function() antiBot.get()
     }),
     spacerValue738437h: spacer738437h = Setting.boolean({
@@ -2824,8 +3075,9 @@ script.registerModule({
 }, function (module) {
     module.on("update", function () {
         if (returnLastPos.get()) {
-            if (mc.thePlayer.onGround)
-                returnToLastOnGroundPos = new BlockPos(mc.thePlayer).down(1);
+            if (mc.thePlayer.onGround) {
+                returnToLastOnGroundPos = new BlockPos(mc.thePlayer).down(1)
+            }
 
             if (mc.thePlayer.isSpectator() && returnToLastOnGroundPos) {
                 PacketUtils.sendPacket(
@@ -2863,31 +3115,28 @@ script.registerModule({
 
         if (antiBot.get()) {
             if (!mc.theWorld) return;
+
             switch (antiBotMode.get()) {
                 case "OldZombie":
                     getTargetsInRange(10, EntityZombie)
                         .filter(function (z) z.isInvisible())
                         .map(function (bot) {
                             mc.theWorld.removeEntity(bot)
-                            debugRemoval.get() &&
-                                addMessage(prefix + "Removed: " + bot.getName());
                         });
                     break;
                 case "CzechHek":
-                    if (packet instanceof S41PacketServerDifficulty)
-                        wasAdded = false;
+                    if (packet instanceof S41PacketServerDifficulty) {
+                        wasAdded = false
+                    }
 
                     if (mc.thePlayer && packet instanceof S38PacketPlayerListItem && packet.getAction() == "ADD_PLAYER") {
                         var info = packet.getEntries().get(0),
                             name = info.getProfile().getName();
 
-                        if (!wasAdded)
-                            wasAdded = name == mc.thePlayer.getName();
-
-                        else if (!mc.thePlayer.isSpectator() && !mc.thePlayer.capabilities.allowFlying && info.getPing() && info.getGameMode() != "NOT_SET") {
+                        if (!wasAdded) {
+                            wasAdded = name == mc.thePlayer.getName()
+                        } else if (!mc.thePlayer.isSpectator() && !mc.thePlayer.capabilities.allowFlying && info.getPing() && info.getGameMode() != "NOT_SET") {
                             e.cancelEvent()
-                            debugRemoval.get() &&
-                                addMessage(prefix + "Removed: §c§l" + name);
                         }
                     }
                     break;
@@ -2897,13 +3146,10 @@ script.registerModule({
                     for (var i = 0; i < entityList.length; i++) {
                         var entity = entityList[i]
 
-                        if (!(entity instanceof EntityPlayer) || entity == mc.thePlayer)
-                            continue;
+                        if (!(entity instanceof EntityPlayer) || entity == mc.thePlayer) continue;
 
                         if (isPlayerBot(entity)) {
                             mc.theWorld.removeEntity(entity)
-                            debugRemoval.get() &&
-                                addMessage(prefix + "Removed: §c§l" + entity.getName());
                         }
                     }
                     break;
@@ -2913,14 +3159,13 @@ script.registerModule({
     module.on("attack", function (e) {
         if (shouldStrafe(e) && combatStrafe.get()) {
             MovementUtils.strafe(combatStrafeSpeed.get())
-
-            if (mc.thePlayer.onGround && autoJump.get())
-                mc.thePlayer.jump();
+            if (mc.thePlayer.onGround && autoJump.get()) {
+                mc.thePlayer.jump()
+            }
         }
     })
     module.on("render3D", function () {
-        if (!mc.thePlayer.isSpectator() || !returnLastPos.get() || !returnToLastOnGroundPos)
-            return;
+        if (!mc.thePlayer.isSpectator() || !returnLastPos.get() || !returnToLastOnGroundPos) return;
 
         RenderUtils.drawBlockBox(returnToLastOnGroundPos, Color.ORANGE, true)
     })
@@ -3121,13 +3366,11 @@ PathAlgorithm = function() {
                     node.pos.getZ() + off[2]
                 );
 
-            if (!isPassable(blockPos))
-                continue;
+            if (!isPassable(blockPos)) continue;
 
             var expandedNode = new Node(blockPos, node)
 
-            if (this.closeList.find(function (n) n.pos.equals(expandedNode.pos)))
-                continue;
+            if (this.closeList.find(function (n) n.pos.equals(expandedNode.pos))) continue;
 
             var aSum = Math.abs(off[0]) + Math.abs(off[1]) + Math.abs(off[2]),
                 tentG = !diagonal || aSum == 1 ?
@@ -3140,8 +3383,7 @@ PathAlgorithm = function() {
                 equalNode = this.openList.find(function (n) n.pos.equals(expandedNode.pos)),
                 equalIndex = this.openList.indexOf(equalNode);
 
-            if (equalNode && tentG >= equalNode.gCost)
-                continue;
+            if (equalNode && tentG >= equalNode.gCost) continue;
 
             expandedNode.parent = node
             expandedNode.gCost = tentG
@@ -3219,8 +3461,7 @@ script.registerModule({
 
         targetEntity = rayTrace(range.get(), 0.1)
 
-        if (targetEntity && PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer) < 10)
-            return;
+        if (targetEntity && PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer) < 10) return;
 
         if (mc.gameSettings.keyBindAttack.pressed && tpHitTimer.hasTimePassed(200)) {
             packetPositions = []
@@ -3230,8 +3471,9 @@ script.registerModule({
                 path = pathAlgorithm.compute(loops.get(), heuristic.get(), diagonalSearch.get())
 
                 if (path.length) {
-                    if (startJump.get() && mc.thePlayer.onGround)
-                        mc.thePlayer.motionY = startJumpMotion.get();
+                    if (startJump.get() && mc.thePlayer.onGround) {
+                        mc.thePlayer.motionY = startJumpMotion.get()
+                    }
 
                     for (var i = 0; i <= path.length - packetIntervall.get(); i += packetIntervall.get()) {
                         var pos = path[i]
@@ -3246,7 +3488,6 @@ script.registerModule({
                             packetEvent.get()
                         )
                     }
-
                     if (path.length % packetIntervall.get() != 0) {
                         packetPositions.push(pathAlgorithm.endPos)
                         PacketUtils.sendPacket(
@@ -3259,16 +3500,22 @@ script.registerModule({
                             packetEvent.get()
                         )
                     }
-
                     if (rotation.get()) {
                         var rot = RotationUtils.faceTrajectory(targetEntity, false, 0.0, 0.0, 0.0);
-                        rot &&
-                            RotationUtils.setTargetRotation(rot, new RotationSettings(ModuleManager.getModule("KillAura"), function () true), 1);
+                        if (rot) {
+                            RotationUtils.setTargetRotation(rot, new RotationSettings(ModuleManager.getModule("KillAura"), function () true), 1)
+                        }
                     }
                     mc.thePlayer.swingItem()
-                    PacketUtils.sendPacket(new C02PacketUseEntity(targetEntity, C02PacketUseEntity.Action.ATTACK), true)
+                    PacketUtils.sendPacket(
+                        new C02PacketUseEntity(
+                            targetEntity,
+                            C02PacketUseEntity.Action.ATTACK
+                        ),
+                        true
+                    )
 
-                    if (retreat.get())
+                    if (retreat.get()) {
                         PacketUtils.sendPacket(
                             new C04PacketPlayerPosition(
                                 pathAlgorithm.startPos.getX(),
@@ -3277,13 +3524,15 @@ script.registerModule({
                                 onGround.get()
                             ),
                             packetEvent.get()
-                        );
+                        )
+                    }
                 }
             }
             tpHitTimer.reset()
         }
-        if (tpHitTimer.hasTimePassed(visibleTime.get()))
-            packetPositions = [];
+        if (tpHitTimer.hasTimePassed(visibleTime.get())) {
+            packetPositions = []
+        }
     })
     module.on("render3D", function () {
         if (renderPacketPositions.get() && packetPositions.length) {
@@ -3303,10 +3552,22 @@ script.registerModule({
 
         if (renderTargetHUD.get() && targetEntity) {
             dynamicScale1 = animate(40, dynamicScale1, 0.25)
-            GuiInventory.drawEntityOnScreen(screenWidth / 2 - 30, screenHeight / 2 + 45, dynamicScale1, 0, 0, targetEntity)
+            GuiInventory.drawEntityOnScreen(
+                screenWidth / 2 - 30,
+                screenHeight / 2 + 45,
+                dynamicScale1,
+                0,
+                0,
+                targetEntity
+            )
 
             var dist = PlayerExtensionKt.getDistanceToEntityBox(targetEntity, mc.thePlayer)
-            mcFont.drawString(dist.toFixed(2) + " m", screenWidth / 2 - 47, screenHeight / 2 + 50, dist < 10 ? 0xFF0000 : 0xFFFFFF)
+            mcFont.drawString(
+                dist.toFixed(2) + " m",
+                screenWidth / 2 - 47,
+                screenHeight / 2 + 50,
+                dist < 10 ? 0xFF0000 : 0xFFFFFF
+            )
         }
     })
     module.on("disable", function () {
