@@ -1,7 +1,7 @@
 ///api_version=2
 (script = registerScript({
     name: "MatrixArchive",
-    version: "1.1.3",
+    version: "1.1.5",
     authors: ["FaaatPotato", "CzechHek", "Du_Couscous", "AlienGurke", "ClientQUI"]
 }));
 
@@ -1185,12 +1185,12 @@ script.registerModule({
                     otherNames = names.filter(function (n) n != mc.thePlayer.getName()),
                     scanPhrases = detectionPhrase.get().split(",").unique().filter(Boolean),
                     target = customIndex.get() ?
-                    serverContentArray[cIndex] :
-                    (
-                        smartTargetIndex.get() ?
-                            (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) :
-                            serverContentArray[0]
-                    );
+                        serverContentArray[cIndex] :
+                        (
+                            smartTargetIndex.get() ?
+                                (serverContentArray.find(function (part) otherNames.includes(part)) || serverContentArray[0]) :
+                                serverContentArray[0]
+                        );
 
                 if (serverChatContent.contains(mc.thePlayer.getName()) && otherNames.some(function (n) serverChatContent.contains(n))) {
                     potKillMessages.push(serverContentArray.filter(Boolean))
@@ -1202,10 +1202,7 @@ script.registerModule({
                 //ChatMessageS2CPacket, the equivalent in new version, has a field sender which would make the detection unique
                 //instead the best approach is to use regex as heuristic which is not unique in all cases, e.g. if other players would write the regex in chat -> false positive
                 //feel free to suggest better ideas
-                if (
-                    serverContentArray.filter(function (part) names.includes(part)).length === 2 &&
-                    scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))
-                ) {
+                if (scanPhrases.some(function (phrase) serverChatContent.contains(phrase + " " + mc.thePlayer.getName()))) {
                     if (detectionMode.get() == "PacketChat") {
                         sendInsult(target)
                     }
@@ -1273,7 +1270,7 @@ script.registerModule({
             currentTarget = e.getTargetEntity()
         }
     });
-    module.on("update", function () {
+    module.on("render3D", function () { //render to hook to frames, this way independent of timer speed
         module.tag = detectionMode.get()
 
         if (sendQueue.length) {
@@ -2205,7 +2202,7 @@ MatrixClickTPValues = {
         name: "MaxPackets",
         min: 10,
         max: 1000,
-        default: 10
+        default: 200
     }),
     flagInitiationPacketsValue: flagInitiationPackets = Setting.integer({
         name: "FlagInitiationPackets",
@@ -2365,7 +2362,7 @@ function isRiding() { //prevents issues with desync where dismount is not detect
 
     if (!clazz) return false;
 
-    if (ModuleManager.getModule("Freecam").getState()) return true;
+    if (ModuleManager.getModule("FreeCam").getState()) return true;
 
     if (Math.abs(mc.thePlayer.posY - ridingEntity.posY) > 3) return true; //prevents issue with FreeCam false positive
 
@@ -2452,7 +2449,7 @@ function findAltPos(anchor, radius, entity) {
             isPassable(p) ||
             !isPassable(p.up(1)) ||
             !isPassable(p.up(2)) ||
-            frustum && tpPredictSize.get() > 0 && !isAABBInFrustum(p, frustum)
+            frustum && tpPredictSize.get() > 0 && !isAABBInFrustum(p, frustum) && isMovingHorizontally(entity)
         )
     }
 
@@ -2529,11 +2526,11 @@ script.registerModule({
         if (isButtonPressed() && !destinationPos) {
             destinationPos = lookPos
 
-            if (getDist(new BlockPos(mc.thePlayer), destinationPos) <= 2 && !ModuleManager.getModule("FreeCam").getState()) {
+            if (getDist(new BlockPos(mc.thePlayer), destinationPos) <= 5 && !ModuleManager.getModule("FreeCam").getState()) {
                 MatrixClickTPModule.setState(false)
 
                 addMessage("")
-                addMessage(prefix + "Please select a position §c§lfarther§7 than §c§l2 blocks!")
+                addMessage(prefix + "Please select a position §c§lfarther§7 than §c§l5 blocks!")
                 addMessage("")
 
                 if (playSounds.get()) {
@@ -2606,9 +2603,9 @@ script.registerModule({
 
         if (destinationPos) {
             destinationPos = findAltPos(
-                selectedEntity && tpPredictSize.get() > 0 && isMovingHorizontally(selectedEntity) ? getEstimatePos(selectedEntity, tpPredictSize.get()) : destinationPos,
+                selectedEntity && tpPredictSize.get() > 0 ? getEstimatePos(selectedEntity, tpPredictSize.get()) : destinationPos,
                 3,
-                selectedEntity || null
+                selectedEntity
             ) || destinationPos
         }
     });
@@ -2638,7 +2635,7 @@ script.registerModule({
             if (!mc.thePlayer.isRiding() && clickTpMode.get() == "CyclePackets") {
                 displayText.push("§criding required")
             }
-            if (getDist(new BlockPos(mc.thePlayer), lookPos) <= 2 && !ModuleManager.getModule("FreeCam").getState()) {
+            if (getDist(new BlockPos(mc.thePlayer), lookPos) <= 5 && !ModuleManager.getModule("FreeCam").getState()) {
                 displayText.push("§ctoo close")
             }
             if (!displayText.length) {
